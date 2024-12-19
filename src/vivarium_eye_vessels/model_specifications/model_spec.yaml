@@ -1,50 +1,33 @@
 components:
-    vivarium_public_health:
-        population:
-            - BasePopulation()
-            - Mortality()
-        results:
-            - ResultsStratifier()
-            - DisabilityObserver()
-            - MortalityObserver()
-
-    # Causes an error if left empty. Uncomment when you have components. 
-    # vivarium_eye_vessels.components:
+    vivarium_eye_vessels.components:
+        - particles.Basic3D()
+        - visualizer.ParticleVisualizer3D()
 
 configuration:
-    input_data:
-        input_draw_number: 0
-    interpolation:
-        order: 0
-        extrapolate: True
     randomness:
-        map_size: 1_000_000
-        key_columns: ['entrance_time', 'age']
-        random_seed: 0
+        random_seed: 42
     time:
         start:
-            year: 2005
-            month: 7
-            day: 2
+            year: 2025
+            month: 1
+            day: 1
         end:
-            year: 2010
-            month: 7
-            day: 2
+            year: 2025
+            month: 9
+            day: 1
         step_size: 1 # Days
     population:
-        population_size: 100
-        initialization_age_min: 0
-        initialization_age_max: 100
-        untracking_age: 100
+        population_size: 10
 
-    stratification:
-        default:
-            - 'age_group'
-            - 'sex'
-            - 'current_year'
-        # disability:
-        #     include:
-        #     exclude:
-        # mortality:
-        #     include:
-        #     exclude:
+    particle:
+        particles_3d:
+            step_size: 0.01
+            overall_max_velocity_change: 0.05
+            initial_velocity_range: [-0.1, 0.1]
+
+    visualization:
+        background_color: [0, 0, 0]
+        rotation_speed: 0.01
+        particle_color: [0, 255, 0]
+        projection_scale: 1000.0
+        fps: 30
