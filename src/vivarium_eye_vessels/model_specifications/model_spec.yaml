@@ -1,6 +1,6 @@
 components:
     vivarium_eye_vessels.components:
-        - particles.Basic3D()
+        - particles.ParticlePaths3D()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -17,7 +17,7 @@ configuration:
             day: 1
         step_size: 1 # Days
     population:
-        population_size: 10
+        population_size: 1
 
     particle:
         particles_3d:
