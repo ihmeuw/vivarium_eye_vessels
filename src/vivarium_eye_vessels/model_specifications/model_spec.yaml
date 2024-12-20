@@ -1,6 +1,8 @@
 components:
     vivarium_eye_vessels.components:
         - particles.ParticlePaths3D()
+        - particles.FrozenParticleRepulsion()
+        - boundaries.EllipsoidContainment()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -25,6 +27,19 @@ configuration:
             overall_max_velocity_change: 0.1
             initial_velocity_range: [-0.1, 0.1]
 
+    frozen_repulsion:
+        repulsion_strength: 0.01  # Base strength of repulsion
+        min_distance: 0.01       # Minimum distance threshold
+        max_distance: 0.5        # Maximum force range
+        force_falloff: 2.0       # Power law exponent (2.0 = inverse square)
+
+    ellipsoid_containment:
+        a: 1  # Ellipsoid x semi-major axis
+        b: 2  # Ellipsoid y semi-major axis
+        c: 1  # Ellipsoid z semi-major axis
+        repulsion_strength: 0.1  # Strength of repulsion force
+        boundary_thickness: 1  # Thickness of boundary region
+   
     visualization:
         background_color: [0, 0, 0]
         rotation_speed: 0.01

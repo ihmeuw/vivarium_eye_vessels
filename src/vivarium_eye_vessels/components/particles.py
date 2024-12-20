@@ -200,3 +200,149 @@ class ParticlePaths3D(Component):
                     "sim_state": "time_step",
                 },
             )
+
+from typing import List, Dict, Any
+import numpy as np
+import pandas as pd
+from vivarium import Component
+from vivarium.framework.engine import Builder
+from vivarium.framework.event import Event
+from vivarium.framework.population import SimulantData
+
+class FrozenParticleRepulsion(Component):
+    """Component that creates repulsive forces between active particles and frozen particles
+    from different paths."""
+    
+    CONFIGURATION_DEFAULTS = {
+        'frozen_repulsion': {
+            'repulsion_strength': 0.01,  # Base strength of repulsion force
+            'min_distance': 0.01,  # Minimum distance to prevent infinite forces
+            'max_distance': 0.5,  # Maximum distance for force calculation
+            'force_falloff': 2.0,  # Power law for force falloff with distance
+        }
+    }
+
+    @property
+    def columns_required(self) -> List[str]:
+        return ['x', 'y', 'z', 'vx', 'vy', 'vz', 'frozen', 'path_id']
+    
+    def setup(self, builder: Builder) -> None:
+        """Setup the component."""
+        self.config = builder.configuration.frozen_repulsion
+        
+        # Get parameters from config
+        self.repulsion_strength = float(self.config.repulsion_strength)
+        self.min_distance = float(self.config.min_distance)
+        self.max_distance = float(self.config.max_distance)
+        self.force_falloff = float(self.config.force_falloff)
+        
+        # Register with time stepping system
+        builder.event.register_listener('time_step', self.on_time_step)
+
+    def calculate_pairwise_forces(
+        self, 
+        active_positions: np.ndarray,
+        active_path_ids: np.ndarray,
+        frozen_positions: np.ndarray,
+        frozen_path_ids: np.ndarray
+    ) -> np.ndarray:
+        """Calculate repulsive forces between active particles and frozen particles from different paths.
+        
+        Parameters
+        ----------
+        active_positions : np.ndarray
+            Array of shape (n_active, 3) containing positions of active particles
+        active_path_ids : np.ndarray
+            Array of shape (n_active,) containing path IDs of active particles
+        frozen_positions : np.ndarray
+            Array of shape (n_frozen, 3) containing positions of frozen particles
+        frozen_path_ids : np.ndarray
+            Array of shape (n_frozen,) containing path IDs of frozen particles
+            
+        Returns
+        -------
+        np.ndarray
+            Array of shape (n_active, 3) containing net force vectors for each active particle
+        """
+        n_active = len(active_positions)
+        n_frozen = len(frozen_positions)
+        
+        # Initialize forces array
+        net_forces = np.zeros((n_active, 3))
+        
+        # If either group is empty, return zero forces
+        if n_active == 0 or n_frozen == 0:
+            return net_forces
+            
+        # Calculate all pairwise displacement vectors
+        # This creates arrays of shape (n_active, n_frozen, 3)
+        displacements = active_positions[:, np.newaxis, :] - frozen_positions[np.newaxis, :, :]
+        
+        # Calculate distances between all pairs
+        # This creates array of shape (n_active, n_frozen)
+        distances = np.sqrt(np.sum(displacements**2, axis=2))
+        
+        # Create mask for different paths
+        # This creates array of shape (n_active, n_frozen)
+        different_paths = active_path_ids[:, np.newaxis] != frozen_path_ids[np.newaxis, :]
+        
+        # Apply minimum distance to prevent infinite forces
+        distances = np.maximum(distances, self.min_distance)
+        
+        # Calculate force magnitudes using power law falloff
+        # Zero out forces beyond max_distance and for same path
+        force_magnitudes = np.where(
+            (distances <= self.max_distance) & different_paths,
+            self.repulsion_strength / (distances ** self.force_falloff),
+            0.0
+        )
+        
+        # Normalize displacement vectors
+        with np.errstate(invalid='ignore', divide='ignore'):
+            unit_vectors = displacements / distances[..., np.newaxis]
+        unit_vectors = np.nan_to_num(unit_vectors)
+        
+        # Calculate force vectors and sum contributions from all frozen particles
+        forces = unit_vectors * force_magnitudes[..., np.newaxis]
+        net_forces = np.sum(forces, axis=1)
+        
+        return net_forces
+
+    def on_time_step(self, event: Event) -> None:
+        """Apply repulsion forces on each time step."""
+        # Get current state of all particles
+        pop = self.population_view.get(event.index)
+        if pop.empty:
+            return
+            
+        # Split into active and frozen particles
+        active_mask = (~pop.frozen) & (pop.path_id.notna())
+        active = pop[active_mask]
+        frozen = pop[pop.frozen]
+        
+        if len(active) == 0 or len(frozen) == 0:
+            return
+            
+        # Get positions and path IDs as numpy arrays
+        active_positions = active[['x', 'y', 'z']].values
+        active_path_ids = active['path_id'].values
+        frozen_positions = frozen[['x', 'y', 'z']].values
+        frozen_path_ids = frozen['path_id'].values
+        
+        # Calculate forces
+        forces = self.calculate_pairwise_forces(
+            active_positions, 
+            active_path_ids, 
+            frozen_positions, 
+            frozen_path_ids
+        )
+        
+        # Update velocities based on forces
+        dt = event.step_size / pd.Timedelta(days=1)
+        
+        active['vx'] += forces[:, 0] * dt
+        active['vy'] += forces[:, 1] * dt
+        active['vz'] += forces[:, 2] * dt
+        
+        # Update population
+        self.population_view.update(active)
