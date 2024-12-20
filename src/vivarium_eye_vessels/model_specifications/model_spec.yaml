@@ -17,7 +17,7 @@ configuration:
             day: 1
         step_size: 1 # Days
     population:
-        population_size: 1
+        population_size: 100
 
     particle:
         particles_3d:
@@ -30,4 +30,4 @@ configuration:
         rotation_speed: 0.01
         particle_color: [0, 255, 0]
         projection_scale: 1000.0
-        fps: 30
+        fps: 60

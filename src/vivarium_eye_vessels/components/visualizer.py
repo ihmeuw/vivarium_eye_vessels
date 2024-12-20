@@ -138,19 +138,20 @@ class ParticleVisualizer3D(Component):
         """Draw connections between particles based on parent_id links."""
         # Debug output
         has_parent = population[pd.notna(population.parent_id)]
-        print(f"\nTimestep connection debug:")
-        print(f"Total particles: {len(population)}")
-        print(f"Particles with parents: {len(has_parent)}")
-        if not has_parent.empty:
-            print("Sample of parent relationships:")
-            sample = has_parent.head(3)
-            for idx, particle in sample.iterrows():
-                print(f"Particle {idx} has parent {particle.parent_id}")
-                print(f"Parent exists in population: {particle.parent_id in population.index}")
-                if particle.parent_id in population.index:
-                    parent = population.loc[particle.parent_id]
-                    print(f"Parent position: ({parent.x:.2f}, {parent.y:.2f}, {parent.z:.2f})")
-                    print(f"Child position: ({particle.x:.2f}, {particle.y:.2f}, {particle.z:.2f})")
+        if False:
+            print(f"\nTimestep connection debug:")
+            print(f"Total particles: {len(population)}")
+            print(f"Particles with parents: {len(has_parent)}")
+            if not has_parent.empty:
+                print("Sample of parent relationships:")
+                sample = has_parent.head(3)
+                for idx, particle in sample.iterrows():
+                    print(f"Particle {idx} has parent {particle.parent_id}")
+                    print(f"Parent exists in population: {particle.parent_id in population.index}")
+                    if particle.parent_id in population.index:
+                        parent = population.loc[particle.parent_id]
+                        print(f"Parent position: ({parent.x:.2f}, {parent.y:.2f}, {parent.z:.2f})")
+                        print(f"Child position: ({particle.x:.2f}, {particle.y:.2f}, {particle.z:.2f})")
 
         # Create a dictionary for quick lookup of particle positions
         particle_positions = {
@@ -177,8 +178,8 @@ class ParticleVisualizer3D(Component):
                 )
                 connections_drawn += 1
         
-        if connections_drawn > 0:
-            print(f"Drew {connections_drawn} connections")
+        # if connections_drawn > 0:
+        #     print(f"Drew {connections_drawn} connections")
 
     def _draw_progress_bar(self) -> None:
         """Draw the simulation progress bar."""
