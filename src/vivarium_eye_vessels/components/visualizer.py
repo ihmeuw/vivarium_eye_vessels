@@ -9,7 +9,7 @@ from vivarium.framework.event import Event
 
 class ParticleVisualizer3D(Component):
     """A 3D visualizer for particles and their path connections."""
-    
+
     CONFIGURATION_DEFAULTS = {
         'visualization': {
             'rotation_speed': 0.02,
@@ -24,6 +24,7 @@ class ParticleVisualizer3D(Component):
             'screen_width': 800,
             'screen_height': 800,
             'particle_size': 3,  # Size of particle dots
+            'zoom_speed': 1.1, # Zoom factor per press
         }
     }
 
@@ -37,23 +38,23 @@ class ParticleVisualizer3D(Component):
 
         # Read configuration
         self.config = builder.configuration.visualization
-        
-        # Setup display
-        self.width = self.config.screen_width
-        self.height = self.config.screen_height
-        self.screen = pygame.display.set_mode((self.width, self.height))
+
+        # Setup display (Full screen)
+        self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        self.width, self.height = pygame.display.get_surface().get_size()
         pygame.display.set_caption("3D Particle Path Visualization")
-        
+
         # Initialize visualization parameters
         self.rotation_angle = 0
         self.rotation_speed = self.config.rotation_speed
         self.projection_scale = self.config.projection_scale
-        
+        self.zoom_level = 1.0 # Initial zoom level
+
         # Get time information
         self.clock = builder.time.clock()
         self.start_time = builder.configuration.time.start
         self.end_time = builder.configuration.time.end
-        
+
         # Initialize the game clock
         self.fps = self.config.fps
         self.pygame_clock = pygame.time.Clock()
@@ -71,6 +72,11 @@ class ParticleVisualizer3D(Component):
             ):
                 pygame.quit()
                 return
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_PLUS or event.key == pygame.K_EQUALS:
+                    self.zoom_level *= self.config.zoom_speed
+                elif event.key == pygame.K_MINUS:
+                    self.zoom_level /= self.config.zoom_speed
 
         # Clear screen
         self.screen.fill(self.config.background_color)
@@ -88,10 +94,10 @@ class ParticleVisualizer3D(Component):
 
         # Draw connections first so they appear behind particles
         self._draw_connections(population, rotation_matrix)
-        
+
         # Then draw particles
         self._draw_particles(population, rotation_matrix)
-        
+
         # Draw UI elements
         self._draw_progress_bar()
         self._draw_fps()
@@ -103,11 +109,14 @@ class ParticleVisualizer3D(Component):
         """Project a 3D point onto 2D screen space."""
         # Scale the point to make the unit cube larger
         scaled_point = point * 2 - 1  # Convert from [0,1] to [-1,1] range
-        
+
         # Apply rotation and move camera back to see full cube
         rotated = np.dot(rotation_matrix, scaled_point)
         rotated[2] += 4  # Move further back from camera
         
+        # Apply zoom
+        rotated[:2] *= self.zoom_level
+
         # Project to screen space with adjusted scale
         if rotated[2] != 0:  # Prevent division by zero
             screen_x = int(self.width/2 + (self.projection_scale * rotated[0]) / rotated[2])
@@ -122,10 +131,10 @@ class ParticleVisualizer3D(Component):
         for idx, particle in population.iterrows():
             position = np.array([particle.x, particle.y, particle.z])
             screen_pos = self._project_point(position, rotation_matrix)
-            
+
             # Choose color based on frozen state
             color = self.config.frozen_color if particle.frozen else self.config.particle_color
-            
+
             # Draw particle
             pygame.draw.circle(
                 self.screen,
@@ -136,39 +145,22 @@ class ParticleVisualizer3D(Component):
 
     def _draw_connections(self, population: pd.DataFrame, rotation_matrix: np.ndarray) -> None:
         """Draw connections between particles based on parent_id links."""
-        # Debug output
-        has_parent = population[pd.notna(population.parent_id)]
-        if False:
-            print(f"\nTimestep connection debug:")
-            print(f"Total particles: {len(population)}")
-            print(f"Particles with parents: {len(has_parent)}")
-            if not has_parent.empty:
-                print("Sample of parent relationships:")
-                sample = has_parent.head(3)
-                for idx, particle in sample.iterrows():
-                    print(f"Particle {idx} has parent {particle.parent_id}")
-                    print(f"Parent exists in population: {particle.parent_id in population.index}")
-                    if particle.parent_id in population.index:
-                        parent = population.loc[particle.parent_id]
-                        print(f"Parent position: ({parent.x:.2f}, {parent.y:.2f}, {parent.z:.2f})")
-                        print(f"Child position: ({particle.x:.2f}, {particle.y:.2f}, {particle.z:.2f})")
 
         # Create a dictionary for quick lookup of particle positions
         particle_positions = {
             idx: self._project_point(
-                np.array([row.x, row.y, row.z]), 
+                np.array([row.x, row.y, row.z]),
                 rotation_matrix
             )
             for idx, row in population.iterrows()
         }
-        
+
         # Draw connections for particles with valid parent_ids
-        connections_drawn = 0
         for idx, particle in population.iterrows():
             if pd.notna(particle.parent_id) and particle.parent_id in particle_positions:
                 start_pos = particle_positions[particle.parent_id]
                 end_pos = particle_positions[idx]
-                
+
                 pygame.draw.line(
                     self.screen,
                     self.config.path_color,
@@ -176,10 +168,6 @@ class ParticleVisualizer3D(Component):
                     end_pos,
                     self.config.path_width
                 )
-                connections_drawn += 1
-        
-        # if connections_drawn > 0:
-        #     print(f"Drew {connections_drawn} connections")
 
     def _draw_progress_bar(self) -> None:
         """Draw the simulation progress bar."""
@@ -189,10 +177,10 @@ class ParticleVisualizer3D(Component):
             progress = float(progress)  # Ensure it's a float
         except TypeError:
             progress = 0.0  # Default to 0 if there's an error
-            
-        bar_height = 5
+
+        bar_height = 10 # Increased bar height
         bar_width = int(self.width * progress)
-        progress_rect = pygame.Rect(0, 0, bar_width, bar_height)
+        progress_rect = pygame.Rect(0, self.height - bar_height, bar_width, bar_height) # Position at the bottom
         pygame.draw.rect(self.screen, self.config.progress_color, progress_rect)
 
     def _draw_fps(self) -> None:

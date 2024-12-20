@@ -72,8 +72,12 @@ class ParticlePaths3D(Component):
         pop["path_id"] = pd.NA
         pop["creation_time"] = self.clock()
 
-        if pop.index[0] == 0:
-            pop.loc[0, 'path_id'] = 0
+        n_vessels = 5
+        for i in range(n_vessels):
+            if pop.index[i] == i:
+                angle = 2 * np.pi * i / n_vessels
+                pop.loc[i, ['x', 'y', 'z']] = [0.5 + 0.1 * np.cos(angle), 0.5 + 0.1 * np.sin(angle), 0.5]
+                pop.loc[i, 'path_id'] = i
 
         self.population_view.update(pop)
 
@@ -100,7 +104,7 @@ class ParticlePaths3D(Component):
         """Update positions and velocities of active particles."""
         # Update positions based on current velocities
         for pos, vel in [('x','vx'), ('y','vy'), ('z','vz')]:
-            particles.loc[:,pos] = (particles[pos] + self.step_size * particles[vel]) % 1.0
+            particles.loc[:,pos] = (particles[pos] + self.step_size * particles[vel]) #% 1.0
 
         # Get max velocity change from pipeline
         max_velocity = self.max_velocity_change(particles.index)
@@ -110,6 +114,11 @@ class ParticlePaths3D(Component):
             dv = (self.randomness.get_draw(particles.index, additional_key=f'd{v}') - 0.5) * \
                  2 * max_velocity
             particles.loc[:,v] += dv
+            particles.loc[:,v] = np.clip(particles.loc[:,v], -1, 1)
+
+        # TODO: avoid getting to close to already frozen vessels
+        # TODO: avoid FAZ
+        # TODO: stay within selected boundary
 
         # # set a random parent for each particle
         # particles.loc[:, 'parent_id'] = self.randomness.choice(
@@ -129,6 +138,8 @@ class ParticlePaths3D(Component):
         # 4. set rows from (2) to have parent_id from (1); 
         # 5. set rows from (1) to be frozen.
         
+        # TODO: sometimes split vessel when you freeze, prior work has suggestion for angle
+
         # if sum(pop.frozen > 0):
         #     import pdb; pdb.set_trace()
         # Find active particles and active with a path_id
