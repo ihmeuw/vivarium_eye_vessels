@@ -59,7 +59,7 @@ class Particle3D(Component):
         pop["creation_time"] = self.clock()
 
         # Initialize vessel positions
-        n_vessels = 5
+        n_vessels = 1
         for i in range(n_vessels):
             if pop.index[i] == i:
                 angle = 2 * np.pi * i / n_vessels
