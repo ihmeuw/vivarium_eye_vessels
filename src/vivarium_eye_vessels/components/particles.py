@@ -1,28 +1,38 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import numpy as np
 import pandas as pd
-from vivarium import Component 
+from vivarium import Component
 from vivarium.framework.engine import Builder
 from vivarium.framework.event import Event
 from vivarium.framework.population import SimulantData
 
+
 class Particle3D(Component):
     """Base component for managing 3D particle positions and velocities."""
-    
+
     @property
     def columns_created(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time", "frozen_duration"]
-        
+        return [
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "frozen",
+            "parent_id",
+            "path_id",
+            "creation_time",
+            "frozen_duration",
+        ]
+
     CONFIGURATION_DEFAULTS = {
         "particles": {
             "step_size": 0.01,
             "overall_max_velocity_change": 0.1,
             "initial_velocity_range": (-0.05, 0.05),
-            "initial_circle": {
-                "center": [1.5, 0.0, 0.5],
-                "radius": 0.1,
-                "n_vessels": 5
-            }
+            "initial_circle": {"center": [1.5, 0.0, 0.5], "radius": 0.1, "n_vessels": 5},
         }
     }
 
@@ -31,7 +41,7 @@ class Particle3D(Component):
         self.step_size = self.config.step_size
         self.overall_max_velocity_change = self.config.overall_max_velocity_change
         self.initial_velocity_range = self.config.initial_velocity_range
-        
+
         self.clock = builder.time.clock()
 
         # Register velocity change pipeline
@@ -53,9 +63,12 @@ class Particle3D(Component):
 
         # Generate random initial velocities
         v_range = self.initial_velocity_range
-        for v in ['vx', 'vy', 'vz']:
-            pop[v] = self.randomness.get_draw(pop.index, additional_key=v) * \
-                    (v_range[1] - v_range[0]) + v_range[0]
+        for v in ["vx", "vy", "vz"]:
+            pop[v] = (
+                self.randomness.get_draw(pop.index, additional_key=v)
+                * (v_range[1] - v_range[0])
+                + v_range[0]
+            )
 
         # Initialize path tracking columns
         pop["frozen"] = False
@@ -77,7 +90,7 @@ class Particle3D(Component):
                 pop.loc[i, ["x", "y", "z"]] = [
                     center[0] + radius * np.cos(angle),
                     center[1] + radius * np.sin(angle),
-                    center[2]
+                    center[2],
                 ]
                 pop.loc[i, "path_id"] = i
 
@@ -87,31 +100,35 @@ class Particle3D(Component):
         """Update positions and velocities of non-frozen particles."""
         pop = self.population_view.get(event.index)
         active_particles = pop[~pop.frozen]
-        
+
         if not active_particles.empty:
             self.update_positions(active_particles)
 
     def update_positions(self, particles: pd.DataFrame) -> None:
         """Update positions and velocities of active particles."""
         # Update positions based on current velocities
-        for pos, vel in [('x','vx'), ('y','vy'), ('z','vz')]:
-            particles.loc[:,pos] = particles[pos] + self.step_size * particles[vel]
+        for pos, vel in [("x", "vx"), ("y", "vy"), ("z", "vz")]:
+            particles.loc[:, pos] = particles[pos] + self.step_size * particles[vel]
 
         # Get max velocity change from pipeline
         max_velocity = self.max_velocity_change(particles.index)
 
         # Update velocities with random changes
-        for v in ['vx', 'vy', 'vz']:
-            dv = (self.randomness.get_draw(particles.index, additional_key=f'd{v}') - 0.5) * \
-                 2 * max_velocity
-            particles.loc[:,v] += dv
-            particles.loc[:,v] = np.clip(particles.loc[:,v], -1, 1)
+        for v in ["vx", "vy", "vz"]:
+            dv = (
+                (self.randomness.get_draw(particles.index, additional_key=f"d{v}") - 0.5)
+                * 2
+                * max_velocity
+            )
+            particles.loc[:, v] += dv
+            particles.loc[:, v] = np.clip(particles.loc[:, v], -1, 1)
 
         self.population_view.update(particles)
 
+
 class PathFreezer(Component):
     """Component for freezing particle paths and creating continuations."""
-    
+
     CONFIGURATION_DEFAULTS = {
         "path_freezer": {
             "freeze_interval": 10,  # Steps between freezing particle positions
@@ -120,8 +137,20 @@ class PathFreezer(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "frozen_duration", "parent_id", "path_id", "creation_time"]
-        
+        return [
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "frozen",
+            "frozen_duration",
+            "parent_id",
+            "path_id",
+            "creation_time",
+        ]
+
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_freezer
         self.step_count = 0
@@ -129,7 +158,7 @@ class PathFreezer(Component):
     def on_time_step(self, event: Event) -> None:
         """Freeze particles on configured interval."""
         self.step_count += 1
-        
+
         if self.step_count % self.config.freeze_interval == 0:
             pop = self.population_view.get(event.index)
             self.freeze_particles(pop)
@@ -138,13 +167,13 @@ class PathFreezer(Component):
         """Create frozen path points and continue paths with new particles."""
         # Find active particles (not frozen, with path)
         active = pop[~pop.frozen & pop.path_id.notna()]
-        
+
         if active.empty:
             return
 
         # Find available particles to use for new branches
         available = pop[~pop.frozen & pop.path_id.isna()]
-        
+
         if len(available) >= len(active):
             to_freeze = available.sample(len(active))
 
@@ -162,16 +191,17 @@ class PathFreezer(Component):
                 frozen_duration=0.0,
             )
 
-            to_freeze['parent_id'] = to_freeze['parent_id'].astype(object)
+            to_freeze["parent_id"] = to_freeze["parent_id"].astype(object)
             self.population_view.update(to_freeze)
 
         # Mark original path points as frozen
         active.loc[:, "frozen"] = True
         self.population_view.update(active)
 
+
 class PathSplitter(Component):
     """Component for splitting particle paths into two branches."""
-    
+
     CONFIGURATION_DEFAULTS = {
         "path_splitter": {
             "split_interval": 20,  # Steps between path splits
@@ -182,7 +212,18 @@ class PathSplitter(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time"]
+        return [
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "frozen",
+            "parent_id",
+            "path_id",
+            "creation_time",
+        ]
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_splitter
@@ -193,7 +234,7 @@ class PathSplitter(Component):
     def on_time_step(self, event: Event) -> None:
         """Split paths on configured interval."""
         self.step_count += 1
-        
+
         if self.step_count % self.config.split_interval == 0:
             pop = self.population_view.get(event.index)
             self.split_paths(pop)
@@ -202,26 +243,26 @@ class PathSplitter(Component):
         """Split eligible paths into two branches."""
         # Find active particles (not frozen, with path)
         active = pop[~pop.frozen & pop.path_id.notna()]
-        
+
         if active.empty:
             return
-            
+
         # Randomly select paths to split based on probability
         split_mask = self.randomness.get_draw(active.index) < self.config.split_probability
         to_split = active[split_mask]
-        
+
         if to_split.empty:
             return
-            
+
         # Find available particles to use for new branches
         available = pop[~pop.frozen & pop.path_id.isna()]
-        
+
         if len(available) < len(to_split):
             return
-            
+
         # Select particles to use for new branches
         new_branches = available.sample(len(to_split))
-        
+
         # Calculate split velocities
         angle_rad = np.radians(self.config.split_angle / 2)
         for idx, (_, original) in enumerate(to_split.iterrows()):
@@ -230,89 +271,96 @@ class PathSplitter(Component):
             speed = np.linalg.norm(vel)
             if speed == 0:
                 continue
-                
+
             # Normalize velocity and create perpendicular vector
             vel_norm = vel / speed
             perp = np.array([-vel_norm[1], vel_norm[0], 0])
             if np.all(perp == 0):
                 perp = np.array([0, -vel_norm[2], vel_norm[1]])
             perp = perp / np.linalg.norm(perp)
-            
+
             # Create rotated velocities
             rot_matrix = self._rotation_matrix(perp, angle_rad)
             new_vel_1 = rot_matrix @ vel
             rot_matrix = self._rotation_matrix(perp, -angle_rad)
             new_vel_2 = rot_matrix @ vel
-            
+
             # Update original particle
-            to_split.loc[original.name, ['vx', 'vy', 'vz']] = new_vel_1
-            
+            to_split.loc[original.name, ["vx", "vy", "vz"]] = new_vel_1
+
             # Update new branch
             new_branch = new_branches.iloc[idx]
-            new_branches.loc[new_branch.name, ['x', 'y', 'z']] = [
-                original.x, original.y, original.z
+            new_branches.loc[new_branch.name, ["x", "y", "z"]] = [
+                original.x,
+                original.y,
+                original.z,
             ]
-            new_branches.loc[new_branch.name, ['vx', 'vy', 'vz']] = new_vel_2
-            new_branches.loc[new_branch.name, 'path_id'] = self.next_path_id
-            new_branches.loc[new_branch.name, 'parent_id'] = original.name
+            new_branches.loc[new_branch.name, ["vx", "vy", "vz"]] = new_vel_2
+            new_branches.loc[new_branch.name, "path_id"] = self.next_path_id
+            new_branches.loc[new_branch.name, "parent_id"] = original.name
             self.next_path_id += 1
-        
+
         # Update population with split paths
         self.population_view.update(pd.concat([to_split, new_branches]))
 
     @staticmethod
     def _rotation_matrix(axis: np.ndarray, theta: float) -> np.ndarray:
         """Return the rotation matrix for rotation around axis by theta radians."""
-        axis = axis/np.sqrt(np.dot(axis, axis))
-        a = np.cos(theta/2.0)
-        b, c, d = -axis*np.sin(theta/2.0)
-        aa, bb, cc, dd = a*a, b*b, c*c, d*d
-        bc, ad, ac, ab, bd, cd = b*c, a*d, a*c, a*b, b*d, c*d
-        return np.array([[aa+bb-cc-dd, 2*(bc+ad), 2*(bd-ac)],
-                        [2*(bc-ad), aa+cc-bb-dd, 2*(cd+ab)],
-                        [2*(bd+ac), 2*(cd-ab), aa+dd-bb-cc]])
+        axis = axis / np.sqrt(np.dot(axis, axis))
+        a = np.cos(theta / 2.0)
+        b, c, d = -axis * np.sin(theta / 2.0)
+        aa, bb, cc, dd = a * a, b * b, c * c, d * d
+        bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+        return np.array(
+            [
+                [aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc],
+            ]
+        )
+
 
 class FrozenParticleRepulsion(Component):
     """Component that creates repulsive forces between active particles and frozen particles
     from different paths and long-enough frozen particles from this path."""
-    
+
     CONFIGURATION_DEFAULTS = {
-        'frozen_repulsion': {
-            'repulsion_strength': 0.01,  # Base strength of repulsion force
-            'min_distance': 0.01,  # Minimum distance to prevent infinite forces
-            'max_distance': 0.5,  # Maximum distance for force calculation
-            'force_falloff': 2.0,  # Power law for force falloff with distance
-            'min_frozen_duration': 1.0,  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
+        "frozen_repulsion": {
+            "repulsion_strength": 0.01,  # Base strength of repulsion force
+            "min_distance": 0.01,  # Minimum distance to prevent infinite forces
+            "max_distance": 0.5,  # Maximum distance for force calculation
+            "force_falloff": 2.0,  # Power law for force falloff with distance
+            "min_frozen_duration": 1.0,  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
-        return ['x', 'y', 'z', 'vx', 'vy', 'vz', 'frozen', 'path_id', 'frozen_duration']
-    
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "path_id", "frozen_duration"]
+
     def setup(self, builder: Builder) -> None:
         """Setup the component."""
         self.config = builder.configuration.frozen_repulsion
-        
+
         # Get parameters from config
         self.repulsion_strength = float(self.config.repulsion_strength)
         self.min_distance = float(self.config.min_distance)
         self.max_distance = float(self.config.max_distance)
         self.force_falloff = float(self.config.force_falloff)
         self.min_frozen_duration = float(self.config.min_frozen_duration)
-        
+
         # Register with time stepping system
-        builder.event.register_listener('time_step', self.on_time_step)
+        builder.event.register_listener("time_step", self.on_time_step)
 
     def calculate_pairwise_forces(
-        self, 
+        self,
         active_positions: np.ndarray,
         active_path_ids: np.ndarray,
         frozen_positions: np.ndarray,
-        frozen_path_ids: np.ndarray
+        frozen_path_ids: np.ndarray,
     ) -> np.ndarray:
         """Calculate repulsive forces between active particles and frozen particles.
-        
+
         Parameters
         ----------
         active_positions : np.ndarray
@@ -323,7 +371,7 @@ class FrozenParticleRepulsion(Component):
             Array of shape (n_frozen, 3) containing positions of frozen particles
         frozen_path_ids : np.ndarray
             Array of shape (n_frozen,) containing path IDs of frozen particles
-            
+
         Returns
         -------
         np.ndarray
@@ -331,42 +379,44 @@ class FrozenParticleRepulsion(Component):
         """
         n_active = len(active_positions)
         n_frozen = len(frozen_positions)
-        
+
         # Initialize forces array
         net_forces = np.zeros((n_active, 3))
-        
+
         # If either group is empty, return zero forces
         if n_active == 0 or n_frozen == 0:
             return net_forces
-            
+
         # Calculate all pairwise displacement vectors
-        displacements = active_positions[:, np.newaxis, :] - frozen_positions[np.newaxis, :, :]
-        
+        displacements = (
+            active_positions[:, np.newaxis, :] - frozen_positions[np.newaxis, :, :]
+        )
+
         # Calculate distances between all pairs
         distances = np.sqrt(np.sum(displacements**2, axis=2))
-        
+
         # Create mask for different paths
         different_paths = active_path_ids[:, np.newaxis] != frozen_path_ids[np.newaxis, :]
-        
+
         # Apply minimum distance to prevent infinite forces
         distances = np.maximum(distances, self.min_distance)
-        
+
         # Calculate force magnitudes using power law falloff
         force_magnitudes = np.where(
             (distances <= self.max_distance) & different_paths,
-            self.repulsion_strength / (distances ** self.force_falloff),
-            0.0
+            self.repulsion_strength / (distances**self.force_falloff),
+            0.0,
         )
-        
+
         # Normalize displacement vectors
-        with np.errstate(invalid='ignore', divide='ignore'):
+        with np.errstate(invalid="ignore", divide="ignore"):
             unit_vectors = displacements / distances[..., np.newaxis]
         unit_vectors = np.nan_to_num(unit_vectors)
-        
+
         # Calculate force vectors and sum contributions from all frozen particles
         forces = unit_vectors * force_magnitudes[..., np.newaxis]
         net_forces = np.sum(forces, axis=1)
-        
+
         return net_forces
 
     def on_time_step(self, event: Event) -> None:
@@ -375,40 +425,39 @@ class FrozenParticleRepulsion(Component):
         pop = self.population_view.get(event.index)
         if pop.empty:
             return
-            
+
         # Increment frozen_duration for frozen particles
         frozen_mask = pop.frozen
-        pop.loc[frozen_mask, 'frozen_duration'] += event.step_size / pd.Timedelta(days=1)
-        
+        pop.loc[frozen_mask, "frozen_duration"] += event.step_size / pd.Timedelta(days=1)
+
         # Split into active and eligible frozen particles
         active_mask = (~pop.frozen) & (pop.path_id.notna())
         active = pop[active_mask]
-        
-        eligible_frozen = pop[(pop.frozen) & (pop.frozen_duration >= self.min_frozen_duration)]
-        
+
+        eligible_frozen = pop[
+            (pop.frozen) & (pop.frozen_duration >= self.min_frozen_duration)
+        ]
+
         if len(active) == 0 or len(eligible_frozen) == 0:
             return
-            
+
         # Get positions and path IDs as numpy arrays
-        active_positions = active[['x', 'y', 'z']].values
-        active_path_ids = active['path_id'].values
-        frozen_positions = eligible_frozen[['x', 'y', 'z']].values
-        frozen_path_ids = eligible_frozen['path_id'].values
-        
+        active_positions = active[["x", "y", "z"]].values
+        active_path_ids = active["path_id"].values
+        frozen_positions = eligible_frozen[["x", "y", "z"]].values
+        frozen_path_ids = eligible_frozen["path_id"].values
+
         # Calculate forces
         forces = self.calculate_pairwise_forces(
-            active_positions, 
-            active_path_ids, 
-            frozen_positions, 
-            frozen_path_ids
+            active_positions, active_path_ids, frozen_positions, frozen_path_ids
         )
-        
+
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
-        
-        active.loc[:, 'vx'] += forces[:, 0] * dt
-        active.loc[:, 'vy'] += forces[:, 1] * dt
-        active.loc[:, 'vz'] += forces[:, 2] * dt
-        
+
+        active.loc[:, "vx"] += forces[:, 0] * dt
+        active.loc[:, "vy"] += forces[:, 1] * dt
+        active.loc[:, "vz"] += forces[:, 2] * dt
+
         # Update population
         self.population_view.update(active)
