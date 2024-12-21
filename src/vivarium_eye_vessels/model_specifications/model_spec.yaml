@@ -30,13 +30,13 @@ configuration:
     frozen_repulsion:
         repulsion_strength: 0.01  # Base strength of repulsion
         min_distance: 0.01       # Minimum distance threshold
-        max_distance: 0.5        # Maximum force range
+        max_distance: 0.15        # Maximum force range
         force_falloff: 2.0       # Power law exponent (2.0 = inverse square)
 
     ellipsoid_containment:
-        a: 1  # Ellipsoid x semi-major axis
-        b: 2  # Ellipsoid y semi-major axis
-        c: 1  # Ellipsoid z semi-major axis
+        a: 2  # Ellipsoid x semi-major axis
+        b: 1  # Ellipsoid y semi-major axis
+        c: .5  # Ellipsoid z semi-major axis
         repulsion_strength: 0.1  # Strength of repulsion force
         boundary_thickness: 1  # Thickness of boundary region
    
@@ -46,3 +46,6 @@ configuration:
         particle_color: [0, 120, 120]
         projection_scale: 1000.0
         fps: 60
+        ellipsoid_color: [50, 50, 50]
+        ellipsoid_points: 10  # Number of points for wireframe detail
+

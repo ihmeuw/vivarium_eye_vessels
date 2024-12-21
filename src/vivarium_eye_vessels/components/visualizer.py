@@ -18,6 +18,7 @@ class ParticleVisualizer3D(Component):
             'particle_color': (255, 255, 255),
             'path_color': (100, 100, 255),  # Color for connection lines
             'frozen_color': (255, 100, 100),  # Color for frozen particles
+            'ellipsoid_color': (50, 150, 50),  # Color for ellipsoid wireframe
             'path_width': 1,  # Width of connection lines
             'progress_color': (0, 255, 0),
             'fps': 60,
@@ -25,6 +26,7 @@ class ParticleVisualizer3D(Component):
             'screen_height': 800,
             'particle_size': 3,  # Size of particle dots
             'zoom_speed': 1.1, # Zoom factor per press
+            'ellipsoid_points': 20,  # Number of points to use in ellipsoid wireframe
         }
     }
 
@@ -50,6 +52,24 @@ class ParticleVisualizer3D(Component):
         self.projection_scale = self.config.projection_scale
         self.zoom_level = 1.0 # Initial zoom level
 
+        # Check if ellipsoid containment is present and get parameters
+        if  'ellipsoid_containment' in builder.components.list_components():
+            try:
+                self.ellipsoid_params = {
+                    'a': float(builder.configuration.ellipsoid_containment.a),
+                    'b': float(builder.configuration.ellipsoid_containment.b),
+                    'c': float(builder.configuration.ellipsoid_containment.c),
+                }
+                self.has_ellipsoid = True
+            except AttributeError:
+                self.has_ellipsoid = False
+        else:
+            self.has_ellipsoid = False
+
+        # Generate ellipsoid points if needed
+        if self.has_ellipsoid:
+            self.ellipsoid_lines = self._generate_ellipsoid_wireframe()
+
         # Get time information
         self.clock = builder.time.clock()
         self.start_time = builder.configuration.time.start
@@ -58,6 +78,58 @@ class ParticleVisualizer3D(Component):
         # Initialize the game clock
         self.fps = self.config.fps
         self.pygame_clock = pygame.time.Clock()
+
+    def _generate_ellipsoid_wireframe(self) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """Generate points for ellipsoid wireframe visualization."""
+        n_points = self.config.ellipsoid_points
+        
+        # Generate parametric angles
+        theta = np.linspace(0, 2*np.pi, n_points)
+        phi = np.linspace(-np.pi/2, np.pi/2, n_points//2)
+        
+        lines = []
+        
+        # Generate longitude lines
+        for t in theta:
+            curve = []
+            for p in phi:
+                x = self.ellipsoid_params['a'] * np.cos(p) * np.cos(t)
+                y = self.ellipsoid_params['b'] * np.cos(p) * np.sin(t)
+                z = self.ellipsoid_params['c'] * np.sin(p)
+                curve.append(np.array([x, y, z]))
+            for i in range(len(curve)-1):
+                lines.append((curve[i], curve[i+1]))
+                
+        # Generate latitude lines
+        for p in phi:
+            curve = []
+            for t in theta:
+                x = self.ellipsoid_params['a'] * np.cos(p) * np.cos(t)
+                y = self.ellipsoid_params['b'] * np.cos(p) * np.sin(t)
+                z = self.ellipsoid_params['c'] * np.sin(p)
+                curve.append(np.array([x, y, z]))
+            curve.append(curve[0])  # Close the loop
+            for i in range(len(curve)-1):
+                lines.append((curve[i], curve[i+1]))
+                
+        return lines
+
+    def _draw_ellipsoid(self, rotation_matrix: np.ndarray) -> None:
+        """Draw the ellipsoid wireframe."""
+        if not self.has_ellipsoid:
+            return
+            
+        for start, end in self.ellipsoid_lines:
+            start_screen = self._project_point(start, rotation_matrix)
+            end_screen = self._project_point(end, rotation_matrix)
+            
+            pygame.draw.line(
+                self.screen,
+                self.config.ellipsoid_color,
+                start_screen,
+                end_screen,
+                1  # Width of ellipsoid lines
+            )
 
     def on_time_step(self, event: Event) -> None:
         """Update visualization on each time step."""
@@ -92,7 +164,11 @@ class ParticleVisualizer3D(Component):
             [-np.sin(self.rotation_angle), 0, np.cos(self.rotation_angle)],
         ])
 
-        # Draw connections first so they appear behind particles
+        # Draw ellipsoid first (if present) so it's behind everything
+        if self.has_ellipsoid:
+            self._draw_ellipsoid(rotation_matrix)
+
+        # Draw connections next
         self._draw_connections(population, rotation_matrix)
 
         # Then draw particles
@@ -145,7 +221,6 @@ class ParticleVisualizer3D(Component):
 
     def _draw_connections(self, population: pd.DataFrame, rotation_matrix: np.ndarray) -> None:
         """Draw connections between particles based on parent_id links."""
-
         # Create a dictionary for quick lookup of particle positions
         particle_positions = {
             idx: self._project_point(

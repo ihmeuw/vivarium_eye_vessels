@@ -1,4 +1,4 @@
-from typing import List, Optional, Set, Tuple
+from typing import List, Dict, Any, Optional, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -116,15 +116,7 @@ class ParticlePaths3D(Component):
             particles.loc[:,v] += dv
             particles.loc[:,v] = np.clip(particles.loc[:,v], -1, 1)
 
-        # TODO: avoid getting to close to already frozen vessels
         # TODO: avoid FAZ
-        # TODO: stay within selected boundary
-
-        # # set a random parent for each particle
-        # particles.loc[:, 'parent_id'] = self.randomness.choice(
-        #     particles.index, particles.index,
-        #     1/len(particles.index)*np.ones_like(particles.index)
-        # ).astype(object)
 
         self.population_view.update(particles)
 
@@ -171,6 +163,7 @@ class ParticlePaths3D(Component):
             # Update the population with the frozen particles
             self.population_view.update(to_freeze)
 
+        if not active_with_path.empty:
             # Mark the original active_with_path particles as frozen
             active_with_path.loc[:, "frozen"] = True
             self.population_view.update(active_with_path)
@@ -200,14 +193,6 @@ class ParticlePaths3D(Component):
                     "sim_state": "time_step",
                 },
             )
-
-from typing import List, Dict, Any
-import numpy as np
-import pandas as pd
-from vivarium import Component
-from vivarium.framework.engine import Builder
-from vivarium.framework.event import Event
-from vivarium.framework.population import SimulantData
 
 class FrozenParticleRepulsion(Component):
     """Component that creates repulsive forces between active particles and frozen particles
@@ -340,9 +325,9 @@ class FrozenParticleRepulsion(Component):
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
         
-        active['vx'] += forces[:, 0] * dt
-        active['vy'] += forces[:, 1] * dt
-        active['vz'] += forces[:, 2] * dt
+        active.loc[:, 'vx'] += forces[:, 0] * dt
+        active.loc[:, 'vy'] += forces[:, 1] * dt
+        active.loc[:, 'vz'] += forces[:, 2] * dt
         
         # Update population
         self.population_view.update(active)
