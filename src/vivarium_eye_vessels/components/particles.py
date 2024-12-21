@@ -11,7 +11,7 @@ class Particle3D(Component):
     
     @property
     def columns_created(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time"]
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time", "frozen_duration"]
         
     CONFIGURATION_DEFAULTS = {
         "particles": {
@@ -59,6 +59,7 @@ class Particle3D(Component):
 
         # Initialize path tracking columns
         pop["frozen"] = False
+        pop["frozen_duration"] = np.nan
         pop["parent_id"] = pd.NA
         pop["path_id"] = pd.NA
         pop["creation_time"] = self.clock()
@@ -119,7 +120,7 @@ class PathFreezer(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time"]
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "frozen_duration", "parent_id", "path_id", "creation_time"]
         
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_freezer
@@ -157,7 +158,8 @@ class PathFreezer(Component):
                 vz=active.vz.values,
                 path_id=active.path_id.values,
                 parent_id=active.index.values,
-                frozen=False
+                frozen=False,
+                frozen_duration=0.0,
             )
 
             to_freeze['parent_id'] = to_freeze['parent_id'].astype(object)
@@ -272,7 +274,7 @@ class PathSplitter(Component):
 
 class FrozenParticleRepulsion(Component):
     """Component that creates repulsive forces between active particles and frozen particles
-    from different paths."""
+    from different paths and long-enough frozen particles from this path."""
     
     CONFIGURATION_DEFAULTS = {
         'frozen_repulsion': {
@@ -280,12 +282,13 @@ class FrozenParticleRepulsion(Component):
             'min_distance': 0.01,  # Minimum distance to prevent infinite forces
             'max_distance': 0.5,  # Maximum distance for force calculation
             'force_falloff': 2.0,  # Power law for force falloff with distance
+            'min_frozen_duration': 1.0,  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
-        return ['x', 'y', 'z', 'vx', 'vy', 'vz', 'frozen', 'path_id']
+        return ['x', 'y', 'z', 'vx', 'vy', 'vz', 'frozen', 'path_id', 'frozen_duration']
     
     def setup(self, builder: Builder) -> None:
         """Setup the component."""
@@ -296,6 +299,7 @@ class FrozenParticleRepulsion(Component):
         self.min_distance = float(self.config.min_distance)
         self.max_distance = float(self.config.max_distance)
         self.force_falloff = float(self.config.force_falloff)
+        self.min_frozen_duration = float(self.config.min_frozen_duration)
         
         # Register with time stepping system
         builder.event.register_listener('time_step', self.on_time_step)
@@ -307,7 +311,7 @@ class FrozenParticleRepulsion(Component):
         frozen_positions: np.ndarray,
         frozen_path_ids: np.ndarray
     ) -> np.ndarray:
-        """Calculate repulsive forces between active particles and frozen particles from different paths.
+        """Calculate repulsive forces between active particles and frozen particles.
         
         Parameters
         ----------
@@ -336,22 +340,18 @@ class FrozenParticleRepulsion(Component):
             return net_forces
             
         # Calculate all pairwise displacement vectors
-        # This creates arrays of shape (n_active, n_frozen, 3)
         displacements = active_positions[:, np.newaxis, :] - frozen_positions[np.newaxis, :, :]
         
         # Calculate distances between all pairs
-        # This creates array of shape (n_active, n_frozen)
         distances = np.sqrt(np.sum(displacements**2, axis=2))
         
         # Create mask for different paths
-        # This creates array of shape (n_active, n_frozen)
         different_paths = active_path_ids[:, np.newaxis] != frozen_path_ids[np.newaxis, :]
         
         # Apply minimum distance to prevent infinite forces
         distances = np.maximum(distances, self.min_distance)
         
         # Calculate force magnitudes using power law falloff
-        # Zero out forces beyond max_distance and for same path
         force_magnitudes = np.where(
             (distances <= self.max_distance) & different_paths,
             self.repulsion_strength / (distances ** self.force_falloff),
@@ -376,19 +376,24 @@ class FrozenParticleRepulsion(Component):
         if pop.empty:
             return
             
-        # Split into active and frozen particles
+        # Increment frozen_duration for frozen particles
+        frozen_mask = pop.frozen
+        pop.loc[frozen_mask, 'frozen_duration'] += event.step_size / pd.Timedelta(days=1)
+        
+        # Split into active and eligible frozen particles
         active_mask = (~pop.frozen) & (pop.path_id.notna())
         active = pop[active_mask]
-        frozen = pop[pop.frozen]
         
-        if len(active) == 0 or len(frozen) == 0:
+        eligible_frozen = pop[(pop.frozen) & (pop.frozen_duration >= self.min_frozen_duration)]
+        
+        if len(active) == 0 or len(eligible_frozen) == 0:
             return
             
         # Get positions and path IDs as numpy arrays
         active_positions = active[['x', 'y', 'z']].values
         active_path_ids = active['path_id'].values
-        frozen_positions = frozen[['x', 'y', 'z']].values
-        frozen_path_ids = frozen['path_id'].values
+        frozen_positions = eligible_frozen[['x', 'y', 'z']].values
+        frozen_path_ids = eligible_frozen['path_id'].values
         
         # Calculate forces
         forces = self.calculate_pairwise_forces(

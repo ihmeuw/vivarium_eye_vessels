@@ -5,6 +5,7 @@ components:
         - particles.PathSplitter()
         - particles.FrozenParticleRepulsion()
         - boundaries.EllipsoidContainment()
+        - boundaries.CylinderExclusion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -21,17 +22,17 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 500
+        population_size: 200
 
     # Base particle configuration
     particles:
         step_size: 0.01
-        overall_max_velocity_change: 0.1
-        initial_velocity_range: [-0.1, 0.1]
+        overall_max_velocity_change: 0.05
+        initial_velocity_range: [-0.03, 0.03]
         initial_circle:
             center: [1.0, 0.0, 0.5]  # Center of the frozen circle
             radius: 0.1              # Radius of the circle
-            n_vessels: 5             # Number of frozen particles in the circle
+            n_vessels: 1             # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -39,24 +40,33 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 50  # Steps between checking for splits
-        split_angle: 30    # Angle in degrees between split paths
+        split_interval: 200     # Steps between checking for splits
+        split_angle: 30         # Angle in degrees between split paths
         split_probability: 0.3  # Probability of eligible path splitting
 
     # Repulsion configuration    
     frozen_repulsion:
         repulsion_strength: 0.02  # Base strength of repulsion
-        min_distance: 0.01       # Minimum distance threshold
-        max_distance: 0.15       # Maximum force range
-        force_falloff: 2.0       # Power law exponent (2.0 = inverse square)
+        min_distance: 0.01        # Minimum distance threshold
+        max_distance: 0.15        # Maximum force range
+        force_falloff: 2.0        # Power law exponent (2.0 = inverse square)
+        min_frozen_duration: 0.1  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
 
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.5  # Ellipsoid z semi-major axis
+        c: 0.25  # Ellipsoid z semi-major axis
         repulsion_strength: 0.2  # Strength of repulsion force
         boundary_thickness: 1    # Thickness of boundary region
-   
+    
+    cylinder_exclusion:
+        center: [-1.0, 0.0, 0.0]  # Center of the cylinder
+        direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
+        radius: 0.2  # Radius of the cylinder
+        height: 3.0  # Height of the cylinder
+        repulsion_strength: 0.3  # Strength of repulsion force
+        boundary_thickness: 0.2  # Thickness of the repulsion field
+        
     visualization:
         background_color: [0, 0, 0]
         rotation_speed: 0.01
