@@ -21,7 +21,7 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 300
+        population_size: 500
 
     # Base particle configuration
     particles:
@@ -35,7 +35,7 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 20  # Steps between checking for splits
+        split_interval: 50  # Steps between checking for splits
         split_angle: 30    # Angle in degrees between split paths
         split_probability: 0.3  # Probability of eligible path splitting
 
@@ -60,4 +60,4 @@ configuration:
         projection_scale: 1000.0
         fps: 60
         ellipsoid_color: [50, 50, 50]
-        ellipsoid_points: 10  # Number of points for wireframe detail
+        ellipsoid_points: 15  # Number of points for wireframe detail
