@@ -68,7 +68,7 @@ class ParticleVisualizer3D(Component):
         self.z_rotation = 0.0  # Rotation around z-axis (roll)
         self.rotation_speed = self.config['rotation_speed']
         self.projection_scale = self.config['projection_scale']
-        self.auto_rotate = True  # Flag for rotation control
+        self.auto_rotate = False  # Flag for rotation control
         self.zoom_level = 1.0
 
         # Camera position and movement

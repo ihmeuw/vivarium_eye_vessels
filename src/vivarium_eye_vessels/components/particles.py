@@ -18,6 +18,11 @@ class Particle3D(Component):
             "step_size": 0.01,
             "overall_max_velocity_change": 0.1,
             "initial_velocity_range": (-0.05, 0.05),
+            "initial_circle": {
+                "center": [1.5, 0.0, 0.5],
+                "radius": 0.1,
+                "n_vessels": 5
+            }
         }
     }
 
@@ -58,15 +63,22 @@ class Particle3D(Component):
         pop["path_id"] = pd.NA
         pop["creation_time"] = self.clock()
 
-        # Initialize vessel positions
-        n_vessels = 1
+        # Initialize active vessel in circle position
+        config = self.config.initial_circle
+
+        center = config.center
+        radius = config.radius
+        n_vessels = config.n_vessels
+
         for i in range(n_vessels):
-            if pop.index[i] == i:
+            if i in pop.index:
                 angle = 2 * np.pi * i / n_vessels
-                pop.loc[i, ['x', 'y', 'z']] = [0.5 + 0.1 * np.cos(angle), 
-                                              0.5 + 0.1 * np.sin(angle), 
-                                              0.5]
-                pop.loc[i, 'path_id'] = i
+                pop.loc[i, ["x", "y", "z"]] = [
+                    center[0] + radius * np.cos(angle),
+                    center[1] + radius * np.sin(angle),
+                    center[2]
+                ]
+                pop.loc[i, "path_id"] = i
 
         self.population_view.update(pop)
 

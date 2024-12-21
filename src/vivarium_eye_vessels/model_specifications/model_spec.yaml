@@ -28,6 +28,10 @@ configuration:
         step_size: 0.01
         overall_max_velocity_change: 0.1
         initial_velocity_range: [-0.1, 0.1]
+        initial_circle:
+            center: [1.0, 0.0, 0.5]  # Center of the frozen circle
+            radius: 0.1              # Radius of the circle
+            n_vessels: 5             # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -41,7 +45,7 @@ configuration:
 
     # Repulsion configuration    
     frozen_repulsion:
-        repulsion_strength: 0.01  # Base strength of repulsion
+        repulsion_strength: 0.02  # Base strength of repulsion
         min_distance: 0.01       # Minimum distance threshold
         max_distance: 0.15       # Maximum force range
         force_falloff: 2.0       # Power law exponent (2.0 = inverse square)
@@ -50,7 +54,7 @@ configuration:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
         c: 0.5  # Ellipsoid z semi-major axis
-        repulsion_strength: 0.1  # Strength of repulsion force
+        repulsion_strength: 0.2  # Strength of repulsion force
         boundary_thickness: 1    # Thickness of boundary region
    
     visualization:
