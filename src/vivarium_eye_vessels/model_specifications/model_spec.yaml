@@ -32,7 +32,7 @@ configuration:
         initial_circle:
             center: [1.0, 0.0, 0.5]  # Center of the frozen circle
             radius: 0.1              # Radius of the circle
-            n_vessels: 1             # Number of frozen particles in the circle
+            n_vessels: 3             # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -56,16 +56,16 @@ configuration:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
         c: 0.25  # Ellipsoid z semi-major axis
-        repulsion_strength: 0.2  # Strength of repulsion force
+        repulsion_strength: 0.5  # Strength of repulsion force
         boundary_thickness: 1    # Thickness of boundary region
     
     cylinder_exclusion:
-        center: [-1.0, 0.0, 0.0]  # Center of the cylinder
+        center: [-.5, 0.0, -1.0]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
-        radius: 0.2  # Radius of the cylinder
-        height: 3.0  # Height of the cylinder
-        repulsion_strength: 0.3  # Strength of repulsion force
-        boundary_thickness: 0.2  # Thickness of the repulsion field
+        radius: 0.25  # Radius of the cylinder
+        height: 2.0  # Height of the cylinder
+        repulsion_strength: 1.0  # Strength of repulsion force
+        boundary_thickness: 1.0  # Thickness of the repulsion field
         
     visualization:
         background_color: [0, 0, 0]
@@ -73,5 +73,6 @@ configuration:
         particle_color: [0, 120, 120]
         projection_scale: 1000.0
         fps: 60
-        ellipsoid_color: [50, 50, 50]
+        ellipsoid_color: [150, 0, 150]
+        cylinder_color: [0, 0, 150]
         ellipsoid_points: 15  # Number of points for wireframe detail
