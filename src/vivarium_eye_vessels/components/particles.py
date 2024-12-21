@@ -1,31 +1,23 @@
-from typing import List, Dict, Any, Optional, Set, Tuple
-
+from typing import List, Dict, Any
 import numpy as np
 import pandas as pd
-from scipy import stats
-from vivarium import Component
+from vivarium import Component 
 from vivarium.framework.engine import Builder
 from vivarium.framework.event import Event
 from vivarium.framework.population import SimulantData
 
-
-class ParticlePaths3D(Component):
-    """A component that simulates particles moving in 3D space and freezing their paths."""
+class Particle3D(Component):
+    """Base component for managing 3D particle positions and velocities."""
     
-    name = "particle_paths_3d"
-
     @property
     def columns_created(self) -> List[str]:
         return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time"]
-
+        
     CONFIGURATION_DEFAULTS = {
         "particles": {
             "step_size": 0.01,
             "overall_max_velocity_change": 0.1,
             "initial_velocity_range": (-0.05, 0.05),
-            "particles_per_year": 1000,  # Number of new particles to add per year
-            "max_active_particles": 1000,  # Maximum number of moving particles
-            "freeze_interval": 10,  # Steps between freezing particle positions
         }
     }
 
@@ -36,14 +28,8 @@ class ParticlePaths3D(Component):
         self.initial_velocity_range = self.config.initial_velocity_range
         
         self.clock = builder.time.clock()
-        self.step_count = 0
-        self.next_path_id = 0
 
-        # Setup for adding new simulants
-        self.fractional_new_particles = 0
-        self.simulant_creator = builder.population.get_simulant_creator()
-
-        # Register the max velocity change pipeline
+        # Register velocity change pipeline
         self.max_velocity_change = builder.value.register_value_producer(
             "particle.max_velocity_change",
             source=lambda index: pd.Series(self.overall_max_velocity_change, index=index),
@@ -68,43 +54,35 @@ class ParticlePaths3D(Component):
 
         # Initialize path tracking columns
         pop["frozen"] = False
-        pop["parent_id"] = pd.NA  # Will store the index of the previous point in path
+        pop["parent_id"] = pd.NA
         pop["path_id"] = pd.NA
         pop["creation_time"] = self.clock()
 
+        # Initialize vessel positions
         n_vessels = 5
         for i in range(n_vessels):
             if pop.index[i] == i:
                 angle = 2 * np.pi * i / n_vessels
-                pop.loc[i, ['x', 'y', 'z']] = [0.5 + 0.1 * np.cos(angle), 0.5 + 0.1 * np.sin(angle), 0.5]
+                pop.loc[i, ['x', 'y', 'z']] = [0.5 + 0.1 * np.cos(angle), 
+                                              0.5 + 0.1 * np.sin(angle), 
+                                              0.5]
                 pop.loc[i, 'path_id'] = i
 
         self.population_view.update(pop)
 
     def on_time_step(self, event: Event) -> None:
-        """Update particle positions, freeze paths, and create new particles."""
-        self.step_count += 1
-        
-        # Get current population state
+        """Update positions and velocities of non-frozen particles."""
         pop = self.population_view.get(event.index)
         active_particles = pop[~pop.frozen]
         
-        # Update positions of active particles
         if not active_particles.empty:
             self.update_positions(active_particles)
-
-        # Freeze particles on interval
-        if self.step_count % self.config.freeze_interval == 0:
-            self.freeze_particles(pop)
-
-        # Add new particles if below max
-        # self.add_new_particles(event)
 
     def update_positions(self, particles: pd.DataFrame) -> None:
         """Update positions and velocities of active particles."""
         # Update positions based on current velocities
         for pos, vel in [('x','vx'), ('y','vy'), ('z','vz')]:
-            particles.loc[:,pos] = (particles[pos] + self.step_size * particles[vel]) #% 1.0
+            particles.loc[:,pos] = particles[pos] + self.step_size * particles[vel]
 
         # Get max velocity change from pipeline
         max_velocity = self.max_velocity_change(particles.index)
@@ -116,83 +94,169 @@ class ParticlePaths3D(Component):
             particles.loc[:,v] += dv
             particles.loc[:,v] = np.clip(particles.loc[:,v], -1, 1)
 
-        # TODO: avoid FAZ
-
         self.population_view.update(particles)
 
-    def freeze_particles(self, pop: pd.DataFrame) -> None:
-        """Create frozen path points and add them to population."""
+class PathFreezer(Component):
+    """Component for freezing particle paths and creating continuations."""
+    
+    CONFIGURATION_DEFAULTS = {
+        "path_freezer": {
+            "freeze_interval": 10,  # Steps between freezing particle positions
+        }
+    }
 
-        # to freeze: 
-        # 1. find rows with a path id that are not frozen; 
-        # 2. find random set of rows that do not have a path id and are not frozen; 
-        # 3. move the without path id rows to the same x,y,z,vx,vy,vz as the rows from (1); 
-        # 4. set rows from (2) to have parent_id from (1); 
-        # 5. set rows from (1) to be frozen.
+    @property
+    def columns_required(self) -> List[str]:
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time"]
         
-        # TODO: sometimes split vessel when you freeze, prior work has suggestion for angle
+    def setup(self, builder: Builder) -> None:
+        self.config = builder.configuration.path_freezer
+        self.step_count = 0
 
-        # if sum(pop.frozen > 0):
-        #     import pdb; pdb.set_trace()
-        # Find active particles and active with a path_id
-        active_particles = pop[~pop.frozen]
-        active_with_path = active_particles.dropna(subset=["path_id"])
+    def on_time_step(self, event: Event) -> None:
+        """Freeze particles on configured interval."""
+        self.step_count += 1
+        
+        if self.step_count % self.config.freeze_interval == 0:
+            pop = self.population_view.get(event.index)
+            self.freeze_particles(pop)
 
-        # Find active particles without a path_id
-        active_without_path = active_particles[active_particles.path_id.isna()]
+    def freeze_particles(self, pop: pd.DataFrame) -> None:
+        """Create frozen path points and continue paths with new particles."""
+        # Find active particles (not frozen, with path)
+        active = pop[~pop.frozen & pop.path_id.notna()]
+        
+        if active.empty:
+            return
 
-        if not active_with_path.empty and not active_without_path.empty:
-            # Randomly select particles without a path_id to freeze
-            num_to_freeze = min(len(active_with_path), len(active_without_path))
-            to_freeze = active_without_path.sample(num_to_freeze)
+        # Find available particles to use for new branches
+        available = pop[~pop.frozen & pop.path_id.isna()]
+        
+        if len(available) >= len(active):
+            to_freeze = available.sample(len(active))
 
-            # Assign positions and velocities from active_with_path to to_freeze
+            # Copy positions and velocities from active paths to new particles
             to_freeze = to_freeze.assign(
-            x=active_with_path.x.values,
-            y=active_with_path.y.values,
-            z=active_with_path.z.values,
-            vx=active_with_path.vx.values,
-            vy=active_with_path.vy.values,
-            vz=active_with_path.vz.values,
-            path_id=active_with_path.path_id.values,
-            parent_id=active_with_path.index.values,
-            frozen=False
+                x=active.x.values,
+                y=active.y.values,
+                z=active.z.values,
+                vx=active.vx.values,
+                vy=active.vy.values,
+                vz=active.vz.values,
+                path_id=active.path_id.values,
+                parent_id=active.index.values,
+                frozen=False
             )
 
             to_freeze['parent_id'] = to_freeze['parent_id'].astype(object)
-            # Update the population with the frozen particles
             self.population_view.update(to_freeze)
 
-        if not active_with_path.empty:
-            # Mark the original active_with_path particles as frozen
-            active_with_path.loc[:, "frozen"] = True
-            self.population_view.update(active_with_path)
+        # Mark original path points as frozen
+        active.loc[:, "frozen"] = True
+        self.population_view.update(active)
 
-    def add_new_particles(self, event: Event) -> None:
-        """Add new particles based on yearly rate."""
-        pop = self.population_view.get(event.index)
-        active_count = len(pop[~pop.frozen])
+class PathSplitter(Component):
+    """Component for splitting particle paths into two branches."""
+    
+    CONFIGURATION_DEFAULTS = {
+        "path_splitter": {
+            "split_interval": 20,  # Steps between path splits
+            "split_angle": 30,  # Angle in degrees between split paths
+            "split_probability": 0.3,  # Probability of a path splitting when eligible
+        }
+    }
+
+    @property
+    def columns_required(self) -> List[str]:
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id", "creation_time"]
+
+    def setup(self, builder: Builder) -> None:
+        self.config = builder.configuration.path_splitter
+        self.step_count = 0
+        self.next_path_id = 1000  # Start high to avoid conflicts
+        self.randomness = builder.randomness.get_stream("path_splitter")
+
+    def on_time_step(self, event: Event) -> None:
+        """Split paths on configured interval."""
+        self.step_count += 1
         
-        if active_count >= self.config.max_active_particles:
+        if self.step_count % self.config.split_interval == 0:
+            pop = self.population_view.get(event.index)
+            self.split_paths(pop)
+
+    def split_paths(self, pop: pd.DataFrame) -> None:
+        """Split eligible paths into two branches."""
+        # Find active particles (not frozen, with path)
+        active = pop[~pop.frozen & pop.path_id.notna()]
+        
+        if active.empty:
             return
             
-        # Calculate number of particles to add this step
-        step_size = event.step_size / pd.Timedelta(days=365)  # Convert to years
-        particles_to_add = self.config.particles_per_year * step_size + self.fractional_new_particles
-        self.fractional_new_particles = particles_to_add % 1
-        particles_to_add = int(particles_to_add)
+        # Randomly select paths to split based on probability
+        split_mask = self.randomness.get_draw(active.index) < self.config.split_probability
+        to_split = active[split_mask]
+        
+        if to_split.empty:
+            return
+            
+        # Find available particles to use for new branches
+        available = pop[~pop.frozen & pop.path_id.isna()]
+        
+        if len(available) < len(to_split):
+            return
+            
+        # Select particles to use for new branches
+        new_branches = available.sample(len(to_split))
+        
+        # Calculate split velocities
+        angle_rad = np.radians(self.config.split_angle / 2)
+        for idx, (_, original) in enumerate(to_split.iterrows()):
+            # Create rotation matrix for positive angle
+            vel = np.array([original.vx, original.vy, original.vz])
+            speed = np.linalg.norm(vel)
+            if speed == 0:
+                continue
+                
+            # Normalize velocity and create perpendicular vector
+            vel_norm = vel / speed
+            perp = np.array([-vel_norm[1], vel_norm[0], 0])
+            if np.all(perp == 0):
+                perp = np.array([0, -vel_norm[2], vel_norm[1]])
+            perp = perp / np.linalg.norm(perp)
+            
+            # Create rotated velocities
+            rot_matrix = self._rotation_matrix(perp, angle_rad)
+            new_vel_1 = rot_matrix @ vel
+            rot_matrix = self._rotation_matrix(perp, -angle_rad)
+            new_vel_2 = rot_matrix @ vel
+            
+            # Update original particle
+            to_split.loc[original.name, ['vx', 'vy', 'vz']] = new_vel_1
+            
+            # Update new branch
+            new_branch = new_branches.iloc[idx]
+            new_branches.loc[new_branch.name, ['x', 'y', 'z']] = [
+                original.x, original.y, original.z
+            ]
+            new_branches.loc[new_branch.name, ['vx', 'vy', 'vz']] = new_vel_2
+            new_branches.loc[new_branch.name, 'path_id'] = self.next_path_id
+            new_branches.loc[new_branch.name, 'parent_id'] = original.name
+            self.next_path_id += 1
+        
+        # Update population with split paths
+        self.population_view.update(pd.concat([to_split, new_branches]))
 
-        # Cap addition to maintain max active particles
-        particles_to_add = min(particles_to_add, 
-                             self.config.max_active_particles - active_count)
-
-        if particles_to_add > 0:
-            self.simulant_creator(
-                particles_to_add,
-                {
-                    "sim_state": "time_step",
-                },
-            )
+    @staticmethod
+    def _rotation_matrix(axis: np.ndarray, theta: float) -> np.ndarray:
+        """Return the rotation matrix for rotation around axis by theta radians."""
+        axis = axis/np.sqrt(np.dot(axis, axis))
+        a = np.cos(theta/2.0)
+        b, c, d = -axis*np.sin(theta/2.0)
+        aa, bb, cc, dd = a*a, b*b, c*c, d*d
+        bc, ad, ac, ab, bd, cd = b*c, a*d, a*c, a*b, b*d, c*d
+        return np.array([[aa+bb-cc-dd, 2*(bc+ad), 2*(bd-ac)],
+                        [2*(bc-ad), aa+cc-bb-dd, 2*(cd+ab)],
+                        [2*(bd+ac), 2*(cd-ab), aa+dd-bb-cc]])
 
 class FrozenParticleRepulsion(Component):
     """Component that creates repulsive forces between active particles and frozen particles

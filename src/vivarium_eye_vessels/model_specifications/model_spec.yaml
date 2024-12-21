@@ -1,6 +1,8 @@
 components:
     vivarium_eye_vessels.components:
-        - particles.ParticlePaths3D()
+        - particles.Particle3D()
+        - particles.PathFreezer()
+        - particles.PathSplitter()
         - particles.FrozenParticleRepulsion()
         - boundaries.EllipsoidContainment()
         - visualizer.ParticleVisualizer3D()
@@ -21,24 +23,35 @@ configuration:
     population:
         population_size: 300
 
-    particle:
-        particles_3d:
-            step_size: 0.01
-            overall_max_velocity_change: 0.1
-            initial_velocity_range: [-0.1, 0.1]
+    # Base particle configuration
+    particles:
+        step_size: 0.01
+        overall_max_velocity_change: 0.1
+        initial_velocity_range: [-0.1, 0.1]
 
+    # Path freezing configuration    
+    path_freezer:
+        freeze_interval: 10  # Steps between freezing positions
+
+    # Path splitting configuration
+    path_splitter:
+        split_interval: 20  # Steps between checking for splits
+        split_angle: 30    # Angle in degrees between split paths
+        split_probability: 0.3  # Probability of eligible path splitting
+
+    # Repulsion configuration    
     frozen_repulsion:
         repulsion_strength: 0.01  # Base strength of repulsion
         min_distance: 0.01       # Minimum distance threshold
-        max_distance: 0.15        # Maximum force range
+        max_distance: 0.15       # Maximum force range
         force_falloff: 2.0       # Power law exponent (2.0 = inverse square)
 
     ellipsoid_containment:
-        a: 2  # Ellipsoid x semi-major axis
-        b: 1  # Ellipsoid y semi-major axis
-        c: .5  # Ellipsoid z semi-major axis
+        a: 2    # Ellipsoid x semi-major axis
+        b: 1    # Ellipsoid y semi-major axis
+        c: 0.5  # Ellipsoid z semi-major axis
         repulsion_strength: 0.1  # Strength of repulsion force
-        boundary_thickness: 1  # Thickness of boundary region
+        boundary_thickness: 1    # Thickness of boundary region
    
     visualization:
         background_color: [0, 0, 0]
@@ -48,4 +61,3 @@ configuration:
         fps: 60
         ellipsoid_color: [50, 50, 50]
         ellipsoid_points: 10  # Number of points for wireframe detail
-
