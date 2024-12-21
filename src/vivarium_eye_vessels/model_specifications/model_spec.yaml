@@ -27,8 +27,8 @@ configuration:
     # Base particle configuration
     particles:
         step_size: 0.01
-        overall_max_velocity_change: 0.05
-        initial_velocity_range: [-0.03, 0.03]
+        overall_max_velocity_change: 0.01
+        initial_velocity_range: [-0.01, 0.01]
         initial_circle:
             center: [1.0, 0.0, 0.5]  # Center of the frozen circle
             radius: 0.1              # Radius of the circle
@@ -46,7 +46,7 @@ configuration:
 
     # Repulsion configuration    
     frozen_repulsion:
-        repulsion_strength: 0.02  # Base strength of repulsion
+        repulsion_strength: 0.1  # Base strength of repulsion
         min_distance: 0.01        # Minimum distance threshold
         max_distance: 0.15        # Maximum force range
         force_falloff: 2.0        # Power law exponent (2.0 = inverse square)
@@ -56,15 +56,15 @@ configuration:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
         c: 0.25  # Ellipsoid z semi-major axis
-        repulsion_strength: 0.5  # Strength of repulsion force
+        repulsion_strength: .1  # Strength of repulsion force
         boundary_thickness: 1    # Thickness of boundary region
     
     cylinder_exclusion:
         center: [-.5, 0.0, -1.0]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
-        radius: 0.25  # Radius of the cylinder
+        radius: 0.5  # Radius of the cylinder
         height: 2.0  # Height of the cylinder
-        repulsion_strength: 1.0  # Strength of repulsion force
+        repulsion_strength: 0.1  # Strength of repulsion force
         boundary_thickness: 1.0  # Thickness of the repulsion field
         
     visualization:
