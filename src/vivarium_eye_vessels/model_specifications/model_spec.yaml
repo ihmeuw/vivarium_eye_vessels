@@ -30,9 +30,9 @@ configuration:
         overall_max_velocity_change: 0.01
         initial_velocity_range: [-0.1, 0.0]
         initial_circle:
-            center: [1.0, 0.0, 0.1]  # Center of the frozen circle
+            center: [1.0, 0.0, 0.0]  # Center of the frozen circle
             radius: 0.1              # Radius of the circle
-            n_vessels: 1             # Number of frozen particles in the circle
+            n_vessels: 2             # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -46,22 +46,22 @@ configuration:
 
     # Repulsion configuration    
     frozen_repulsion:
-        spring_constant: 0.5  # Spring constant for Hooke's law (force/distance)
-        max_distance: 0.05  # Maximum distance for force calculation (acts as spring rest length)
+        spring_constant: 0.1  # Spring constant for Hooke's law (force/distance)
+        max_distance: 0.25  # Maximum distance for force calculation (acts as spring rest length)
         min_frozen_duration: 1.0  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
 
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.25  # Ellipsoid z semi-major axis
-        spring_constant: 1.0
+        c: 0.125  # Ellipsoid z semi-major axis
+        spring_constant: 0.5
     
     cylinder_exclusion:
         radius: 0.2  # Radius of the cylinder
         height: 2.0  # Height of the cylinder
         center: [-.5, 0.0, -1.0]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
-        spring_constant: 1.0  # Spring constant for Hooke's law (force/distance)
+        spring_constant: 0.5  # Spring constant for Hooke's law (force/distance)
         
     visualization:
         background_color: [0, 0, 0]
