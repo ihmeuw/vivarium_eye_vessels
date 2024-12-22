@@ -3,6 +3,7 @@ components:
         - particles.Particle3D()
         - particles.PathFreezer()
         - particles.PathSplitter()
+        - particles.PathExtinction()
         - particles.FrozenParticleRepulsion()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
@@ -43,6 +44,13 @@ configuration:
         split_interval: 100     # Steps between checking for splits
         split_angle: 30         # Angle in degrees between split paths
         split_probability: 0.2  # Probability of eligible path splitting
+
+    path_extinction:
+        extinction_start_time: '2025-03-01'
+        extinction_end_time: '2025-06-01'
+        initial_freeze_probability: 0.0
+        final_freeze_probability: 0.25
+        check_interval: 100
 
     # Repulsion configuration    
     frozen_repulsion:

@@ -320,6 +320,82 @@ class PathSplitter(Component):
         )
 
 
+class PathExtinction(Component):
+    """Component for controlling extinction of active paths over time."""
+
+    CONFIGURATION_DEFAULTS = {
+        'path_extinction': {
+            'extinction_start_time': '2020-01-01',  # When freezing starts
+            'extinction_end_time': '2020-12-31',    # When max probability reached
+            'initial_freeze_probability': 0.0,       # Starting freeze probability
+            'final_freeze_probability': 0.3,         # Target freeze probability
+            'check_interval': 5,                     # Steps between freeze checks
+        }
+    }
+
+    @property
+    def columns_required(self) -> List[str]:
+        return ['frozen', 'path_id']
+
+    def setup(self, builder: Builder) -> None:
+        self.config = builder.configuration.path_extinction
+        
+        # Convert times to timestamps
+        self.start_time = pd.Timestamp(self.config.extinction_start_time)
+        self.end_time = pd.Timestamp(self.config.extinction_end_time)
+        
+        # Get probability parameters
+        self.p_start = self.config.initial_freeze_probability
+        self.p_end = self.config.final_freeze_probability
+        
+        # Setup time tracking
+        self.clock = builder.time.clock()
+        self.step_count = 0
+        
+        # Setup randomness stream
+        self.randomness = builder.randomness.get_stream('path_extinction')
+
+    def get_current_freeze_probability(self) -> float:
+        """Calculate current freeze probability based on time."""
+        current_time = self.clock()
+        
+        if current_time < self.start_time:
+            return self.p_start
+        elif current_time > self.end_time:
+            return self.p_end
+        else:
+            # Linear interpolation between start and end probabilities
+            progress = (current_time - self.start_time) / (self.end_time - self.start_time)
+            return self.p_start + (self.p_end - self.p_start) * progress
+
+    def on_time_step(self, event: Event) -> None:
+        """Check for path freezing on configured interval."""
+        self.step_count += 1
+        
+        if self.step_count % self.config.check_interval != 0:
+            return
+            
+        pop = self.population_view.get(event.index)
+        
+        # Find active particles with paths
+        active = pop[~pop.frozen & pop.path_id.notna()]
+        
+        if active.empty:
+            return
+            
+        # Get current freeze probability
+        p_freeze = self.get_current_freeze_probability()
+        
+        # Randomly select paths to freeze
+        to_freeze = active[
+            self.randomness.get_draw(active.index) < p_freeze
+        ]
+        
+        if not to_freeze.empty:
+            to_freeze.loc[:, 'frozen'] = True
+            self.population_view.update(to_freeze)
+
+
 class FrozenParticleRepulsion(Component):
     """Component that creates spring-like repulsive forces between active particles and frozen particles
     from different paths and long-enough frozen particles from this path. Uses Hooke's law to model
