@@ -58,7 +58,7 @@ class ParticleVisualizer3D(Component):
         self.z_rotation = 0.0
         self.rotation_speed = self.config["rotation_speed"]
         self.projection_scale = self.config["projection_scale"]
-        
+
         self.auto_rotate = False
         self.auto_rotate_state = 'x_positive'  # States: x_positive, x_negative, y_positive, y_negative
         self.auto_rotate_angle = 0  # Track current rotation amount
@@ -215,6 +215,34 @@ class ParticleVisualizer3D(Component):
                     self.screen, self.config["cylinder_color"], start_pos, end_pos, 1
                 )
 
+    def _points_in_cylinder(self, points: np.ndarray) -> bool:
+        """Vectorized check if points are within the cylinder bounds."""
+        if not self.has_cylinder:
+            return np.zeros(len(points), dtype=bool)
+        
+        # Get vectors from cylinder center to all points
+        point_vectors = points - self.cylinder_params["center"]
+        
+        # Project vectors onto cylinder axis (using broadcasting)
+        axis = self.cylinder_params["direction"]
+        projections = np.dot(point_vectors, axis)[:, np.newaxis] * axis
+        
+        # Get vectors perpendicular to axis
+        radials = point_vectors - projections
+        
+        # Check height bounds
+        height = self.cylinder_params["height"]
+        proj_lengths = np.dot(point_vectors, axis)
+        height_check = (proj_lengths >= 0) & (proj_lengths <= height)
+        
+        # Check radius bounds
+        radius = self.cylinder_params["radius"]
+        radial_distances = np.linalg.norm(radials, axis=1)
+        radius_check = radial_distances <= radius
+        
+        return height_check & radius_check
+
+
     def _draw_ellipsoid(self, rotation_matrix: np.ndarray) -> None:
         for line in self.ellipsoid_lines:
             start_pos = self._project_point(line[0], rotation_matrix)
@@ -263,6 +291,11 @@ class ParticleVisualizer3D(Component):
             self.config["frozen_color"],
             self.config["particle_color"],
         )
+        # Override colors for points in cylinder
+        if self.has_cylinder:
+            points = population[["x", "y", "z"]].values
+            in_cylinder = self._points_in_cylinder(points)
+            colors[in_cylinder] = self.config["cylinder_color"]
 
         self.connection_surface.fill((0, 0, 0, 0))
         self.particle_surface.fill((0, 0, 0, 0))
