@@ -242,7 +242,6 @@ class ParticleVisualizer3D(Component):
         
         return height_check & radius_check
 
-
     def _draw_ellipsoid(self, rotation_matrix: np.ndarray) -> None:
         for line in self.ellipsoid_lines:
             start_pos = self._project_point(line[0], rotation_matrix)
@@ -252,6 +251,36 @@ class ParticleVisualizer3D(Component):
                 pygame.draw.line(
                     self.screen, self.config["ellipsoid_color"], start_pos, end_pos, 1
                 )
+
+    def _draw_axes(self, rotation_matrix: np.ndarray) -> None:
+        """Draw coordinate axes at the origin."""
+        origin = np.array([0., 0., 0.])
+        axis_length = 1.0  # Length of each axis line
+        
+        # Define the axes endpoints
+        axes_endpoints = [
+            np.array([axis_length, 0., 0.]),  # X axis - red
+            np.array([0., axis_length, 0.]),  # Y axis - green
+            np.array([0., 0., axis_length]),  # Z axis - blue
+        ]
+        
+        axis_colors = [
+            (120, 0, 0),    # Red for X
+            (0, 120, 0),    # Green for Y
+            (0, 0, 120),    # Blue for Z
+        ]
+        
+        # Project origin and draw each axis
+        origin_proj = self._project_point(origin, rotation_matrix)
+        if origin_proj:
+            for endpoint, color in zip(axes_endpoints, axis_colors):
+                end_proj = self._project_point(endpoint, rotation_matrix)
+                if end_proj:
+                    pygame.draw.line(self.screen, color, origin_proj, end_proj, 2)
+                    # Draw a small label near the end of each axis
+                    font = pygame.font.Font(None, 24)
+                    label = font.render(["X", "Y", "Z"][axis_colors.index(color)], True, color)
+                    self.screen.blit(label, (end_proj[0] + 5, end_proj[1] - 5))
 
     def on_time_step(self, event: Event) -> None:
         population = self.population_view.get(event.index)
@@ -309,6 +338,9 @@ class ParticleVisualizer3D(Component):
             self._draw_ellipsoid(rotation_matrix)
         if self.has_cylinder:
             self._draw_cylinder(rotation_matrix)
+
+        # Add axes visualization
+        self._draw_axes(rotation_matrix)
 
         # Draw progress bar, FPS, and controls help
         self._draw_progress_bar()
