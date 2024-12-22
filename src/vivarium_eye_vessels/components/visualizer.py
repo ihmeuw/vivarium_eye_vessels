@@ -215,6 +215,16 @@ class ParticleVisualizer3D(Component):
                     self.screen, self.config["cylinder_color"], start_pos, end_pos, 1
                 )
 
+    def _draw_ellipsoid(self, rotation_matrix: np.ndarray) -> None:
+        for line in self.ellipsoid_lines:
+            start_pos = self._project_point(line[0], rotation_matrix)
+            end_pos = self._project_point(line[1], rotation_matrix)
+
+            if start_pos and end_pos:
+                pygame.draw.line(
+                    self.screen, self.config["ellipsoid_color"], start_pos, end_pos, 1
+                )
+
     def _points_in_cylinder(self, points: np.ndarray) -> bool:
         """Vectorized check if points are within the cylinder bounds."""
         if not self.has_cylinder:
@@ -242,15 +252,19 @@ class ParticleVisualizer3D(Component):
         
         return height_check & radius_check
 
-    def _draw_ellipsoid(self, rotation_matrix: np.ndarray) -> None:
-        for line in self.ellipsoid_lines:
-            start_pos = self._project_point(line[0], rotation_matrix)
-            end_pos = self._project_point(line[1], rotation_matrix)
-
-            if start_pos and end_pos:
-                pygame.draw.line(
-                    self.screen, self.config["ellipsoid_color"], start_pos, end_pos, 1
-                )
+    def _points_in_ellipsoid(self, points: np.ndarray) -> np.ndarray:
+        """Vectorized check if points are within the ellipsoid bounds."""
+        if not self.has_ellipsoid:
+            return np.zeros(len(points), dtype=bool)
+            
+        # For each point (x,y,z), check if (x/a)^2 + (y/b)^2 + (z/c)^2 <= 1
+        squared_ratios = (
+            (points[:, 0] / self.ellipsoid_params["a"]) ** 2 +
+            (points[:, 1] / self.ellipsoid_params["b"]) ** 2 +
+            (points[:, 2] / self.ellipsoid_params["c"]) ** 2
+        )
+        
+        return squared_ratios <= 1.0
 
     def _draw_axes(self, rotation_matrix: np.ndarray) -> None:
         """Draw coordinate axes at the origin."""
@@ -320,11 +334,19 @@ class ParticleVisualizer3D(Component):
             self.config["frozen_color"],
             self.config["particle_color"],
         )
+
         # Override colors for points in cylinder
         if self.has_cylinder:
             points = population[["x", "y", "z"]].values
             in_cylinder = self._points_in_cylinder(points)
             colors[in_cylinder] = self.config["cylinder_color"]
+            
+        # Override colors for points outside ellipsoid
+        if self.has_ellipsoid:
+            points = population[["x", "y", "z"]].values
+            in_ellipsoid = self._points_in_ellipsoid(points)
+            # Make points outside ellipsoid orange
+            colors[~in_ellipsoid] = self.config["ellipsoid_color"]
 
         self.connection_surface.fill((0, 0, 0, 0))
         self.particle_surface.fill((0, 0, 0, 0))
