@@ -321,15 +321,14 @@ class PathSplitter(Component):
 
 
 class FrozenParticleRepulsion(Component):
-    """Component that creates repulsive forces between active particles and frozen particles
-    from different paths and long-enough frozen particles from this path."""
+    """Component that creates spring-like repulsive forces between active particles and frozen particles
+    from different paths and long-enough frozen particles from this path. Uses Hooke's law to model
+    the repulsive force, treating the maximum interaction distance as the spring's rest length."""
 
     CONFIGURATION_DEFAULTS = {
         "frozen_repulsion": {
-            "repulsion_strength": 0.01,  # Base strength of repulsion force
-            "min_distance": 0.01,  # Minimum distance to prevent infinite forces
-            "max_distance": 0.5,  # Maximum distance for force calculation
-            "force_falloff": 2.0,  # Power law for force falloff with distance
+            "spring_constant": 0.01,  # Spring constant for Hooke's law (force/distance)
+            "max_distance": 0.5,  # Maximum distance for force calculation (acts as spring rest length)
             "min_frozen_duration": 1.0,  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
         }
     }
@@ -343,10 +342,8 @@ class FrozenParticleRepulsion(Component):
         self.config = builder.configuration.frozen_repulsion
 
         # Get parameters from config
-        self.repulsion_strength = float(self.config.repulsion_strength)
-        self.min_distance = float(self.config.min_distance)
+        self.spring_constant = float(self.config.spring_constant)
         self.max_distance = float(self.config.max_distance)
-        self.force_falloff = float(self.config.force_falloff)
         self.min_frozen_duration = float(self.config.min_frozen_duration)
 
         # Register with time stepping system
@@ -359,7 +356,9 @@ class FrozenParticleRepulsion(Component):
         frozen_positions: np.ndarray,
         frozen_path_ids: np.ndarray,
     ) -> np.ndarray:
-        """Calculate repulsive forces between active particles and frozen particles.
+        """Calculate spring-like repulsive forces between active particles and frozen particles.
+        Uses Hooke's law: F = -k * x, where x is the compression from the rest length
+        (max_distance - actual_distance).
 
         Parameters
         ----------
@@ -398,13 +397,16 @@ class FrozenParticleRepulsion(Component):
         # Create mask for different paths
         different_paths = active_path_ids[:, np.newaxis] != frozen_path_ids[np.newaxis, :]
 
-        # Apply minimum distance to prevent infinite forces
-        distances = np.maximum(distances, self.min_distance)
+        # Calculate spring compression (negative for particles closer than max_distance)
+        compression = distances - self.max_distance
 
-        # Calculate force magnitudes using power law falloff
+        # Calculate force magnitudes using Hooke's law, only for particles closer than max_distance
+        # Force is proportional to compression (F = -k * x)
+        # Note: compression is negative when particles are closer than max_distance,
+        # so we negate it to get a repulsive force
         force_magnitudes = np.where(
-            (distances <= self.max_distance) & different_paths,
-            self.repulsion_strength / (distances**self.force_falloff),
+            (compression < 0) & different_paths,
+            -self.spring_constant * compression,  # Negative compression gives positive (repulsive) force
             0.0,
         )
 

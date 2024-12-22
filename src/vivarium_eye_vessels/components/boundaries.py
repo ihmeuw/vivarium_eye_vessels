@@ -9,10 +9,10 @@ from vivarium.framework.population import SimulantData
 
 
 class EllipsoidContainment(Component):
-    """Component that keeps particles within an ellipsoid boundary using magnetic repulsion.
+    """Component that keeps particles within an ellipsoid boundary using Hooke's law.
 
-    This component applies a repulsive force that increases as particles approach the
-    ellipsoid boundary, preventing them from escaping the containment field.
+    This component applies an inward spring force proportional to how far particles
+    have moved beyond the ellipsoid surface, pulling them back into the containment field.
     """
 
     CONFIGURATION_DEFAULTS = {
@@ -20,14 +20,12 @@ class EllipsoidContainment(Component):
             "a": 1.0,  # Semi-major axis in x direction
             "b": 1.0,  # Semi-major axis in y direction
             "c": 1.0,  # Semi-major axis in z direction
-            "repulsion_strength": 0.1,  # Strength of repulsion force
-            "boundary_thickness": 0.1,  # Thickness of repulsion field
+            "spring_constant": 0.1,  # Spring constant for Hooke's law (force/distance)
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
-        # We need position and velocity components from the particle simulation
         return ["x", "y", "z", "vx", "vy", "vz", "frozen"]
 
     def setup(self, builder: Builder) -> None:
@@ -38,47 +36,65 @@ class EllipsoidContainment(Component):
         self.a = float(self.config.a)
         self.b = float(self.config.b)
         self.c = float(self.config.c)
-
-        # Get other parameters
-        self.repulsion_strength = float(self.config.repulsion_strength)
-        self.boundary_thickness = float(self.config.boundary_thickness)
+        self.spring_constant = float(self.config.spring_constant)
 
         # Register with time stepping system
         builder.event.register_listener("time_step", self.on_time_step)
 
-    def calculate_ellipsoid_distance(self, x: float, y: float, z: float) -> float:
-        """Calculate normalized distance from center of ellipsoid.
-
-        A value > 1 means the point is outside the ellipsoid.
-        A value = 1 means the point is on the surface.
-        A value < 1 means the point is inside the ellipsoid.
+    def calculate_ellipsoid_metrics(self, x: float, y: float, z: float) -> tuple[float, np.ndarray]:
+        """Calculate distance beyond ellipsoid surface and direction of restoring force.
+        
+        Returns
+        -------
+        tuple[float, np.ndarray]
+            - Distance beyond surface (positive means outside ellipsoid)
+            - Unit vector pointing inward toward ellipsoid
         """
-        return np.sqrt((x / self.a) ** 2 + (y / self.b) ** 2 + (z / self.c) ** 2)
+        # Calculate normalized radial distance
+        d = np.sqrt((x / self.a) ** 2 + (y / self.b) ** 2 + (z / self.c) ** 2)
+        
+        if d < 1e-10:  # Handle point at origin
+            return 0.0, np.zeros(3)
+            
+        # Calculate how far beyond surface (positive means outside)
+        surface_distance = (d - 1.0)  
+        
+        # Calculate direction for force (pointing INWARD)
+        # Note: These are proportional to the gradient, but we negate to point inward
+        direction = np.array([
+            -x / (self.a**2 * d),
+            -y / (self.b**2 * d),
+            -z / (self.c**2 * d)
+        ])
+        
+        # Normalize the direction vector
+        direction_magnitude = np.linalg.norm(direction)
+        if direction_magnitude > 0:
+            direction = direction / direction_magnitude
+            
+        return surface_distance, direction
 
     def calculate_repulsion_force(
         self, x: float, y: float, z: float
     ) -> tuple[float, float, float]:
-        """Calculate the repulsive force vector at a given point."""
-        # Get normalized distance from ellipsoid center
-        d = self.calculate_ellipsoid_distance(x, y, z)
-
-        # If particle is well within ellipsoid, no force needed
-        if d < (1.0 - self.boundary_thickness):
+        """Calculate the spring-like restoring force vector using Hooke's law."""
+        surface_distance, inward_direction = self.calculate_ellipsoid_metrics(x, y, z)
+        
+        # Only apply force if outside ellipsoid (positive surface_distance)
+        if surface_distance <= 0:
             return 0.0, 0.0, 0.0
 
-        # Calculate normalized direction vector from center
-        dx = x / (self.a**2 * d)
-        dy = y / (self.b**2 * d)
-        dz = z / (self.c**2 * d)
-
-        # Force increases as particles approach boundary
-        force_magnitude = self.repulsion_strength * (d - (1.0 - self.boundary_thickness))
-
-        # Return force vector components
-        return (-force_magnitude * dx, -force_magnitude * dy, -force_magnitude * dz)
+        # Apply Hooke's law: F = kx where:
+        # - k is spring constant
+        # - x is distance beyond surface
+        # - direction is already pointing inward
+        force_magnitude = self.spring_constant * surface_distance
+        force_vector = force_magnitude * inward_direction
+        
+        return force_vector[0], force_vector[1], force_vector[2]
 
     def on_time_step(self, event: Event) -> None:
-        """Apply repulsion forces on each time step."""
+        """Apply restoring forces on each time step."""
         # Get current state of all unfrozen particles
         pop = self.population_view.get(event.index, query="frozen == False")
         if pop.empty:
@@ -103,30 +119,21 @@ class EllipsoidContainment(Component):
 
 
 class CylinderExclusion(Component):
-    """Component that repels particles from inside a cylindrical exclusion zone using magnetic repulsion.
-
-    This component applies a repulsive force that increases as particles approach the
-    center of the defined cylinder, preventing them from staying within the exclusion zone.
+    """Component that repels particles from inside a cylindrical exclusion zone using Hooke's law.
+    Only considers radial distance from cylinder axis.
     """
 
     CONFIGURATION_DEFAULTS = {
         "cylinder_exclusion": {
             "radius": 1.0,  # Radius of the cylinder
-            "height": 2.0,  # Height of the cylinder (along the direction axis)
             "center": [0.0, 0.0, 0.0],  # Center of the cylinder
-            "direction": [
-                0.0,
-                0.0,
-                1.0,
-            ],  # Direction vector of the cylinder (default along z-axis)
-            "repulsion_strength": 0.1,  # Strength of repulsion force
-            "boundary_thickness": 0.1,  # Thickness of the repulsion field
+            "direction": [0.0, 0.0, 1.0],  # Direction vector of the cylinder (default along z-axis)
+            "spring_constant": 0.1,  # Spring constant for Hooke's law (force/distance)
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
-        # Requires position and velocity components from the particle simulation
         return ["x", "y", "z", "vx", "vy", "vz", "frozen"]
 
     def setup(self, builder: Builder) -> None:
@@ -135,63 +142,61 @@ class CylinderExclusion(Component):
 
         # Get cylinder parameters from config
         self.radius = float(self.config.radius)
-        self.height = float(self.config.height)
         self.center = np.array(self.config.center, dtype=float)
         self.direction = np.array(self.config.direction, dtype=float)
         self.direction /= np.linalg.norm(self.direction)  # Ensure direction is a unit vector
-        self.repulsion_strength = float(self.config.repulsion_strength)
-        self.boundary_thickness = float(self.config.boundary_thickness)
+        self.spring_constant = float(self.config.spring_constant)
 
         # Register with time stepping system
         builder.event.register_listener("time_step", self.on_time_step)
 
-    def calculate_cylinder_distance(self, x: float, y: float, z: float) -> float:
-        """Calculate normalized distance to the center of the cylindrical boundary.
-
-        A value < 1 means the point is inside the boundary layer.
-        A value = 1 means the point is on the surface.
-        A value > 1 means the point is outside the boundary layer.
+    def calculate_radial_penetration(self, x: float, y: float, z: float) -> tuple[float, np.ndarray]:
+        """Calculate radial penetration into cylinder and direction of force.
+        
+        Returns:
+        --------
+        tuple[float, np.ndarray]
+            - Penetration depth (positive means inside cylinder)
+            - Unit vector pointing radially outward
         """
+        # Get vector from center to point
         position = np.array([x, y, z], dtype=float) - self.center
-        projection_length = np.dot(position, self.direction)
-        projected_point = self.center + projection_length * self.direction
-        radial_vector = position - projection_length * self.direction
-        radial_distance = np.linalg.norm(radial_vector) / self.radius
-        height_distance = abs(projection_length) / (self.height / 2)
+        
+        # Project onto cylinder axis
+        axial_component = np.dot(position, self.direction) * self.direction
+        
+        # Get radial vector (perpendicular to axis)
+        radial_vector = position - axial_component
+        radial_distance = np.linalg.norm(radial_vector)
 
-        # Determine if particle is outside the cylinder's height
-        if height_distance > 1.0:
-            return float("inf")  # Outside height of cylinder
+        # Calculate penetration (positive means inside cylinder)
+        penetration = self.radius - radial_distance
+        
+        # Handle point exactly on axis with random outward direction
+        if radial_distance < 1e-10:
+            random_perpendicular = np.array([1, 0, 0]) if abs(self.direction[0]) < 0.9 else np.array([0, 1, 0])
+            outward_direction = np.cross(self.direction, random_perpendicular)
+            outward_direction /= np.linalg.norm(outward_direction)
+        else:
+            outward_direction = radial_vector / radial_distance
 
-        return radial_distance
+        return penetration, outward_direction
 
     def calculate_repulsion_force(
         self, x: float, y: float, z: float
     ) -> tuple[float, float, float]:
-        """Calculate the repulsive force vector at a given point."""
-        d = self.calculate_cylinder_distance(x, y, z)
-
-        # If particle is outside cylinder or well outside the boundary, no force
-        if d >= (1.0 + self.boundary_thickness):
+        """Calculate the spring-like repulsive force vector using Hooke's law."""
+        penetration, outward_direction = self.calculate_radial_penetration(x, y, z)
+        
+        # Only apply force if inside cylinder (positive penetration)
+        if penetration <= 0:
             return 0.0, 0.0, 0.0
 
-        position = np.array([x, y, z], dtype=float) - self.center
-        projection_length = np.dot(position, self.direction)
-        projected_point = self.center + projection_length * self.direction
-        radial_vector = position - projection_length * self.direction
-        radial_magnitude = np.linalg.norm(radial_vector)
-
-        if radial_magnitude == 0:
-            radial_magnitude = 1e-10  # Prevent division by zero
-
-        radial_direction = radial_vector / radial_magnitude
-
-        # Force magnitude
-        force_magnitude = self.repulsion_strength * max(0, (1.0 - d))
-
-        # Calculate force vector
-        force_vector = force_magnitude * radial_direction
-
+        # Apply Hooke's law: F = kx where x is penetration depth
+        # Force points outward when penetration is positive
+        force_magnitude = self.spring_constant * penetration
+        force_vector = force_magnitude * outward_direction
+        
         return force_vector[0], force_vector[1], force_vector[2]
 
     def on_time_step(self, event: Event) -> None:
