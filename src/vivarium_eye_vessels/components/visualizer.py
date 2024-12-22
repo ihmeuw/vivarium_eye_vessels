@@ -58,7 +58,12 @@ class ParticleVisualizer3D(Component):
         self.z_rotation = 0.0
         self.rotation_speed = self.config["rotation_speed"]
         self.projection_scale = self.config["projection_scale"]
+        
         self.auto_rotate = False
+        self.auto_rotate_state = 'x_positive'  # States: x_positive, x_negative, y_positive, y_negative
+        self.auto_rotate_angle = 0  # Track current rotation amount
+        self.max_rotation_angle = np.pi/6  # 30 degrees
+    
         self.zoom_level = 1.0
         self.camera_pos = np.array([0.0, 0.0, 0.0])
         self.path_widths = None
@@ -232,7 +237,7 @@ class ParticleVisualizer3D(Component):
         self.screen.fill(self.config["background_color"])
 
         if self.auto_rotate:
-            self.y_rotation += self.rotation_speed
+            self._do_auto_rotation_step()
 
         self.y_rotation %= 2 * np.pi
         self.x_rotation %= 2 * np.pi
@@ -298,20 +303,19 @@ class ParticleVisualizer3D(Component):
         # Handle held keys
         keys = pygame.key.get_pressed()
 
-        # Manual rotation when paused
-        if not self.auto_rotate:
-            if keys[pygame.K_LEFT]:
-                self.y_rotation -= self.config["manual_rotation_step"]
-            if keys[pygame.K_RIGHT]:
-                self.y_rotation += self.config["manual_rotation_step"]
-            if keys[pygame.K_UP]:
-                self.x_rotation -= self.config["manual_rotation_step"]
-            if keys[pygame.K_DOWN]:
-                self.x_rotation += self.config["manual_rotation_step"]
-            if keys[pygame.K_z]:  # Added z rotation
-                self.z_rotation -= self.config["manual_rotation_step"]
-            if keys[pygame.K_x]:  # Added x rotation
-                self.z_rotation += self.config["manual_rotation_step"]
+        # Manual rotation 
+        if keys[pygame.K_LEFT]:
+            self.y_rotation -= self.config["manual_rotation_step"]
+        if keys[pygame.K_RIGHT]:
+            self.y_rotation += self.config["manual_rotation_step"]
+        if keys[pygame.K_UP]:
+            self.x_rotation -= self.config["manual_rotation_step"]
+        if keys[pygame.K_DOWN]:
+            self.x_rotation += self.config["manual_rotation_step"]
+        if keys[pygame.K_z]:  # Added z rotation
+            self.z_rotation -= self.config["manual_rotation_step"]
+        if keys[pygame.K_x]:  # Added x rotation
+            self.z_rotation += self.config["manual_rotation_step"]
 
         # WASD movement for x and y axes
         if keys[pygame.K_w]:
@@ -330,6 +334,49 @@ class ParticleVisualizer3D(Component):
             self.camera_pos[2] -= self.config["movement_speed"]  # Move down
 
         return True
+
+    def _do_auto_rotation_step(self):
+        rotation_step = self.rotation_speed
+        
+        if self.auto_rotate_state == 'x_positive':
+            self.x_rotation += rotation_step
+            self.auto_rotate_angle += rotation_step
+            if self.auto_rotate_angle >= self.max_rotation_angle:
+                self.auto_rotate_state = 'x_negative'
+                
+        elif self.auto_rotate_state == 'x_negative':
+            self.x_rotation -= rotation_step
+            self.auto_rotate_angle -= rotation_step
+            if self.auto_rotate_angle <= -self.max_rotation_angle:
+                self.auto_rotate_state = 'x_return'
+                
+        elif self.auto_rotate_state == 'x_return':
+            if self.auto_rotate_angle < 0:
+                self.x_rotation += rotation_step
+                self.auto_rotate_angle += rotation_step
+            else:
+                self.auto_rotate_state = 'y_positive'
+                self.auto_rotate_angle = 0
+                
+        elif self.auto_rotate_state == 'y_positive':
+            self.y_rotation += rotation_step
+            self.auto_rotate_angle += rotation_step
+            if self.auto_rotate_angle >= self.max_rotation_angle:
+                self.auto_rotate_state = 'y_negative'
+                
+        elif self.auto_rotate_state == 'y_negative':
+            self.y_rotation -= rotation_step
+            self.auto_rotate_angle -= rotation_step
+            if self.auto_rotate_angle <= -self.max_rotation_angle:
+                self.auto_rotate_state = 'y_return'
+                
+        elif self.auto_rotate_state == 'y_return':
+            if self.auto_rotate_angle < 0:
+                self.y_rotation += rotation_step
+                self.auto_rotate_angle += rotation_step
+            else:
+                self.auto_rotate_state = 'x_positive'
+                self.auto_rotate_angle = 0
 
     def _project_points(
         self, points: np.ndarray, rotation_matrix: np.ndarray
