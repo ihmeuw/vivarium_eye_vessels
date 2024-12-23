@@ -2,6 +2,8 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
+import sklearn
+
 from vivarium import Component
 from vivarium.framework.engine import Builder
 from vivarium.framework.event import Event
@@ -582,3 +584,91 @@ class FrozenParticleRepulsion(Component):
 
         # Update population
         self.population_view.update(active)
+
+class PathDLA(Component):
+    """
+    Component for freezing particles at the end of a path using DLA.
+    """
+
+    CONFIGURATION_DEFAULTS = {
+        "path_dla": {
+            "stickiness": 0.9,
+            "near_radius": 0.1,
+        }
+    }
+
+    @property
+    def columns_required(self) -> List[str]:
+        return [
+            "x",
+            "y",
+            "z",
+            "frozen",
+            "path_id",
+            "parent_id",
+        ]
+
+    def setup(self, builder: Builder) -> None:
+        self.config = builder.configuration.path_dla
+        self.randomness = builder.randomness.get_stream("path_dla")
+
+    def on_time_step(self, event: Event) -> None:
+        pop = self.population_view.get(event.index)
+        self.dla_freeze(pop)
+
+    def dla_freeze(self, pop: pd.DataFrame) -> None:
+        """
+        Freeze particles near frozen particles using DLA.
+        """
+        # Get all frozen particles
+        frozen = pop[pop.frozen]
+
+        # If no frozen particles, nothing to do
+        if frozen.empty:
+            return
+
+        # Consider only non-frozen particles
+        not_frozen = pop[~pop.frozen]
+
+        # If no not_frozen particles, nothing to do
+        if not_frozen.empty:
+            return
+
+        # Build a KDTree for efficient neighbor lookup
+        tree = sklearn.neighbors.KDTree(frozen[["x", "y", "z"]].values, leaf_size=2)
+
+        # Find not_frozen particles within the DLA radius of frozen particles
+        near_frozen_indices = tree.query_radius(
+            not_frozen[["x", "y", "z"]].values, r=self.config.near_radius
+        )
+
+        # Vectorize the freezing logic
+        
+        # 1. Check for near particles
+        near_particles = np.array([len(indices) > 0 for indices in near_frozen_indices])
+
+        # 2. Generate stickiness probabilities for all particles at once
+        stickiness_probabilities = self.randomness.get_draw(
+            not_frozen.index, additional_key="stickiness"
+        )
+        
+        # 3. Compare with stickiness threshold
+        freeze_condition = stickiness_probabilities < self.config.stickiness
+        
+        # 4. Combine conditions to determine particles to freeze
+        freeze_mask = near_particles & freeze_condition
+
+        # Freeze the selected particles and assign parent_id
+        to_freeze = not_frozen[freeze_mask]
+        if not to_freeze.empty:
+            # For each particle to freeze, find the nearest frozen particle
+            nearest_frozen_indices = tree.query(
+                to_freeze[["x", "y", "z"]].values, k=1, return_distance=False
+            )
+            
+            # Assign the parent_id of the nearest frozen particle
+            to_freeze["parent_id"] = frozen.index[nearest_frozen_indices.flatten()].astype(object)
+            to_freeze["frozen"] = True
+
+            # Update the population
+            self.population_view.update(to_freeze)

@@ -5,6 +5,7 @@ components:
         - particles.PathSplitter()
         - particles.PathExtinction()
         - particles.FrozenParticleRepulsion()
+        - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
         - visualizer.ParticleVisualizer3D()
@@ -52,7 +53,10 @@ configuration:
         final_freeze_probability: 0.15
         check_interval: 60
 
-    # Repulsion configuration    
+    path_dla:
+        stickiness: 1.0            # Probability of sticking when near frozen particle
+        near_radius: 0.05           # Distance for checking proximity to frozen particles
+
     frozen_repulsion:
         spring_constant: 0.1  # Spring constant for Hooke's law (force/distance)
         max_distance: 0.25  # Maximum distance for force calculation (acts as spring rest length)
