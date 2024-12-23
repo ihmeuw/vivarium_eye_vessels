@@ -60,10 +60,12 @@ class ParticleVisualizer3D(Component):
         self.projection_scale = self.config["projection_scale"]
 
         self.auto_rotate = False
-        self.auto_rotate_state = 'x_positive'  # States: x_positive, x_negative, y_positive, y_negative
+        self.auto_rotate_state = (
+            "x_positive"  # States: x_positive, x_negative, y_positive, y_negative
+        )
         self.auto_rotate_angle = 0  # Track current rotation amount
-        self.max_rotation_angle = np.pi/6  # 30 degrees
-    
+        self.max_rotation_angle = np.pi / 6  # 30 degrees
+
         self.zoom_level = 1.0
         self.camera_pos = np.array([0.0, 0.0, 0.0])
         self.path_widths = None
@@ -229,61 +231,61 @@ class ParticleVisualizer3D(Component):
         """Vectorized check if points are within the cylinder bounds."""
         if not self.has_cylinder:
             return np.zeros(len(points), dtype=bool)
-        
+
         # Get vectors from cylinder center to all points
         point_vectors = points - self.cylinder_params["center"]
-        
+
         # Project vectors onto cylinder axis (using broadcasting)
         axis = self.cylinder_params["direction"]
         projections = np.dot(point_vectors, axis)[:, np.newaxis] * axis
-        
+
         # Get vectors perpendicular to axis
         radials = point_vectors - projections
-        
+
         # Check height bounds
         height = self.cylinder_params["height"]
         proj_lengths = np.dot(point_vectors, axis)
         height_check = (proj_lengths >= 0) & (proj_lengths <= height)
-        
+
         # Check radius bounds
         radius = self.cylinder_params["radius"]
         radial_distances = np.linalg.norm(radials, axis=1)
         radius_check = radial_distances <= radius
-        
+
         return height_check & radius_check
 
     def _points_in_ellipsoid(self, points: np.ndarray) -> np.ndarray:
         """Vectorized check if points are within the ellipsoid bounds."""
         if not self.has_ellipsoid:
             return np.zeros(len(points), dtype=bool)
-            
+
         # For each point (x,y,z), check if (x/a)^2 + (y/b)^2 + (z/c)^2 <= 1
         squared_ratios = (
-            (points[:, 0] / self.ellipsoid_params["a"]) ** 2 +
-            (points[:, 1] / self.ellipsoid_params["b"]) ** 2 +
-            (points[:, 2] / self.ellipsoid_params["c"]) ** 2
+            (points[:, 0] / self.ellipsoid_params["a"]) ** 2
+            + (points[:, 1] / self.ellipsoid_params["b"]) ** 2
+            + (points[:, 2] / self.ellipsoid_params["c"]) ** 2
         )
-        
+
         return squared_ratios <= 1.0
 
     def _draw_axes(self, rotation_matrix: np.ndarray) -> None:
         """Draw coordinate axes at the origin."""
-        origin = np.array([0., 0., 0.])
+        origin = np.array([0.0, 0.0, 0.0])
         axis_length = 1.0  # Length of each axis line
-        
+
         # Define the axes endpoints
         axes_endpoints = [
-            np.array([axis_length, 0., 0.]),  # X axis - red
-            np.array([0., axis_length, 0.]),  # Y axis - green
-            np.array([0., 0., axis_length]),  # Z axis - blue
+            np.array([axis_length, 0.0, 0.0]),  # X axis - red
+            np.array([0.0, axis_length, 0.0]),  # Y axis - green
+            np.array([0.0, 0.0, axis_length]),  # Z axis - blue
         ]
-        
+
         axis_colors = [
-            (120, 0, 0),    # Red for X
-            (0, 120, 0),    # Green for Y
-            (0, 0, 120),    # Blue for Z
+            (120, 0, 0),  # Red for X
+            (0, 120, 0),  # Green for Y
+            (0, 0, 120),  # Blue for Z
         ]
-        
+
         # Project origin and draw each axis
         origin_proj = self._project_point(origin, rotation_matrix)
         if origin_proj:
@@ -293,7 +295,9 @@ class ParticleVisualizer3D(Component):
                     pygame.draw.line(self.screen, color, origin_proj, end_proj, 2)
                     # Draw a small label near the end of each axis
                     font = pygame.font.Font(None, 24)
-                    label = font.render(["X", "Y", "Z"][axis_colors.index(color)], True, color)
+                    label = font.render(
+                        ["X", "Y", "Z"][axis_colors.index(color)], True, color
+                    )
                     self.screen.blit(label, (end_proj[0] + 5, end_proj[1] - 5))
 
     def on_time_step(self, event: Event) -> None:
@@ -340,7 +344,7 @@ class ParticleVisualizer3D(Component):
             points = population[["x", "y", "z"]].values
             in_cylinder = self._points_in_cylinder(points)
             colors[in_cylinder] = self.config["cylinder_color"]
-            
+
         # Override colors for points outside ellipsoid
         if self.has_ellipsoid:
             points = population[["x", "y", "z"]].values
@@ -390,7 +394,7 @@ class ParticleVisualizer3D(Component):
         # Handle held keys
         keys = pygame.key.get_pressed()
 
-        # Manual rotation 
+        # Manual rotation
         if keys[pygame.K_LEFT]:
             self.y_rotation -= self.config["manual_rotation_step"]
         if keys[pygame.K_RIGHT]:
@@ -424,45 +428,45 @@ class ParticleVisualizer3D(Component):
 
     def _do_auto_rotation_step(self):
         rotation_step = self.rotation_speed
-        
-        if self.auto_rotate_state == 'x_positive':
+
+        if self.auto_rotate_state == "x_positive":
             self.x_rotation += rotation_step
             self.auto_rotate_angle += rotation_step
             if self.auto_rotate_angle >= self.max_rotation_angle:
-                self.auto_rotate_state = 'x_negative'
-                
-        elif self.auto_rotate_state == 'x_negative':
+                self.auto_rotate_state = "x_negative"
+
+        elif self.auto_rotate_state == "x_negative":
             self.x_rotation -= rotation_step
             self.auto_rotate_angle -= rotation_step
             if self.auto_rotate_angle <= -self.max_rotation_angle:
-                self.auto_rotate_state = 'x_return'
-                
-        elif self.auto_rotate_state == 'x_return':
+                self.auto_rotate_state = "x_return"
+
+        elif self.auto_rotate_state == "x_return":
             if self.auto_rotate_angle < 0:
                 self.x_rotation += rotation_step
                 self.auto_rotate_angle += rotation_step
             else:
-                self.auto_rotate_state = 'y_positive'
+                self.auto_rotate_state = "y_positive"
                 self.auto_rotate_angle = 0
-                
-        elif self.auto_rotate_state == 'y_positive':
+
+        elif self.auto_rotate_state == "y_positive":
             self.y_rotation += rotation_step
             self.auto_rotate_angle += rotation_step
             if self.auto_rotate_angle >= self.max_rotation_angle:
-                self.auto_rotate_state = 'y_negative'
-                
-        elif self.auto_rotate_state == 'y_negative':
+                self.auto_rotate_state = "y_negative"
+
+        elif self.auto_rotate_state == "y_negative":
             self.y_rotation -= rotation_step
             self.auto_rotate_angle -= rotation_step
             if self.auto_rotate_angle <= -self.max_rotation_angle:
-                self.auto_rotate_state = 'y_return'
-                
-        elif self.auto_rotate_state == 'y_return':
+                self.auto_rotate_state = "y_return"
+
+        elif self.auto_rotate_state == "y_return":
             if self.auto_rotate_angle < 0:
                 self.y_rotation += rotation_step
                 self.auto_rotate_angle += rotation_step
             else:
-                self.auto_rotate_state = 'x_positive'
+                self.auto_rotate_state = "x_positive"
                 self.auto_rotate_angle = 0
 
     def _project_points(

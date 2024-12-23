@@ -10,27 +10,27 @@ from vivarium.framework.population import SimulantData
 
 class EllipsoidContainment(Component):
     """Component that keeps particles within an ellipsoid boundary using Hooke's law.
-    
+
     This version uses vectorized operations for improved performance.
     """
 
     CONFIGURATION_DEFAULTS = {
         "ellipsoid_containment": {
             "a": 1.0,  # Semi-major axis in x direction
-            "b": 1.0,  # Semi-major axis in y direction 
+            "b": 1.0,  # Semi-major axis in y direction
             "c": 1.0,  # Semi-major axis in z direction
             "spring_constant": 0.1,  # Spring constant for Hooke's law (force/distance)
         }
     }
 
-    @property 
+    @property
     def columns_required(self) -> List[str]:
         return ["x", "y", "z", "vx", "vy", "vz", "frozen"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the component."""
         self.config = builder.configuration.ellipsoid_containment
-        
+
         # Get semi-major axes from config
         self.a = float(self.config.a)
         self.b = float(self.config.b)
@@ -39,7 +39,7 @@ class EllipsoidContainment(Component):
 
         # Pre-compute squared denominators for gradient calculation
         self.a2 = self.a * self.a
-        self.b2 = self.b * self.b  
+        self.b2 = self.b * self.b
         self.c2 = self.c * self.c
 
         # Register with time stepping system
@@ -47,50 +47,54 @@ class EllipsoidContainment(Component):
 
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
         """Vectorized calculation of forces for all particles.
-        
+
         Parameters
         ----------
         positions : np.ndarray
             Nx3 array of particle positions (x,y,z)
-            
+
         Returns
         -------
         np.ndarray
             Nx3 array of force vectors
         """
         # Calculate normalized radial distances
-        normalized_pos = positions * np.array([1/self.a, 1/self.b, 1/self.c])
+        normalized_pos = positions * np.array([1 / self.a, 1 / self.b, 1 / self.c])
         d = np.sqrt(np.sum(normalized_pos * normalized_pos, axis=1))
-        
+
         # Handle particles at origin
         mask_origin = d < 1e-10
         d[mask_origin] = 1e-10  # Avoid division by zero
-        
+
         # Calculate surface distances (positive means outside)
         surface_distances = d - 1.0
-        
+
         # Calculate direction vectors (proportional to gradient)
-        directions = -positions * np.array([1/self.a2, 1/self.b2, 1/self.c2])
+        directions = -positions * np.array([1 / self.a2, 1 / self.b2, 1 / self.c2])
         directions = directions / d[:, np.newaxis]  # Normalize by radial distance
-        
+
         # Normalize direction vectors
         direction_magnitudes = np.linalg.norm(directions, axis=1)
         mask_nonzero = direction_magnitudes > 0
-        directions[mask_nonzero] = directions[mask_nonzero] / direction_magnitudes[mask_nonzero, np.newaxis]
-        
+        directions[mask_nonzero] = (
+            directions[mask_nonzero] / direction_magnitudes[mask_nonzero, np.newaxis]
+        )
+
         # Only apply forces to particles outside ellipsoid
         mask_outside = surface_distances > 0
-        
+
         # Calculate force magnitudes using Hooke's law
         force_magnitudes = np.zeros_like(surface_distances)
-        force_magnitudes[mask_outside] = self.spring_constant * surface_distances[mask_outside]
-        
+        force_magnitudes[mask_outside] = (
+            self.spring_constant * surface_distances[mask_outside]
+        )
+
         # Calculate final force vectors
         forces = directions * force_magnitudes[:, np.newaxis]
-        
+
         # Zero out forces for particles at origin
         forces[mask_origin] = 0
-        
+
         return forces
 
     def on_time_step(self, event: Event) -> None:
@@ -102,14 +106,14 @@ class EllipsoidContainment(Component):
 
         # Extract positions as numpy array
         positions = pop[["x", "y", "z"]].to_numpy()
-        
+
         # Calculate forces for all particles at once
         forces = self.calculate_forces_vectorized(positions)
-        
+
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
         pop[["vx", "vy", "vz"]] += forces * dt
-        
+
         # Update population
         self.population_view.update(pop)
 
@@ -123,7 +127,11 @@ class CylinderExclusion(Component):
         "cylinder_exclusion": {
             "radius": 1.0,  # Radius of the cylinder
             "center": [0.0, 0.0, 0.0],  # Center of the cylinder
-            "direction": [0.0, 0.0, 1.0],  # Direction vector of the cylinder (default along z-axis)
+            "direction": [
+                0.0,
+                0.0,
+                1.0,
+            ],  # Direction vector of the cylinder (default along z-axis)
             "spring_constant": 0.1,  # Spring constant for Hooke's law (force/distance)
         }
     }
@@ -144,7 +152,9 @@ class CylinderExclusion(Component):
         self.spring_constant = float(self.config.spring_constant)
 
         # Pre-compute random perpendicular vector for axis cases
-        random_perpendicular = np.array([1, 0, 0]) if abs(self.direction[0]) < 0.9 else np.array([0, 1, 0])
+        random_perpendicular = (
+            np.array([1, 0, 0]) if abs(self.direction[0]) < 0.9 else np.array([0, 1, 0])
+        )
         self.default_outward = np.cross(self.direction, random_perpendicular)
         self.default_outward /= np.linalg.norm(self.default_outward)
 
@@ -153,12 +163,12 @@ class CylinderExclusion(Component):
 
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
         """Vectorized calculation of forces for all particles.
-        
+
         Parameters
         ----------
         positions : np.ndarray
             Nx3 array of particle positions (x,y,z)
-            
+
         Returns
         -------
         np.ndarray
@@ -184,24 +194,26 @@ class CylinderExclusion(Component):
         # Handle points on or very close to axis
         mask_on_axis = radial_distances < 1e-10
         outward_directions = np.zeros_like(positions)
-        
+
         # For points not on axis, calculate actual outward direction
         mask_off_axis = ~mask_on_axis
-        outward_directions[mask_off_axis] = radial_vectors[mask_off_axis] / radial_distances[mask_off_axis, np.newaxis]
-        
+        outward_directions[mask_off_axis] = (
+            radial_vectors[mask_off_axis] / radial_distances[mask_off_axis, np.newaxis]
+        )
+
         # For points on axis, use pre-computed default outward direction
         outward_directions[mask_on_axis] = self.default_outward
 
         # Only apply forces to particles inside cylinder
         mask_inside = penetrations > 0
-        
+
         # Calculate force magnitudes using Hooke's law
         force_magnitudes = np.zeros_like(radial_distances)
         force_magnitudes[mask_inside] = self.spring_constant * penetrations[mask_inside]
-        
+
         # Calculate final force vectors
         forces = outward_directions * force_magnitudes[:, np.newaxis]
-        
+
         return forces
 
     def on_time_step(self, event: Event) -> None:
@@ -213,13 +225,13 @@ class CylinderExclusion(Component):
 
         # Extract positions as numpy array
         positions = pop[["x", "y", "z"]].to_numpy()
-        
+
         # Calculate forces for all particles at once
         forces = self.calculate_forces_vectorized(positions)
-        
+
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
         pop[["vx", "vy", "vz"]] += forces * dt
-        
+
         # Update population
         self.population_view.update(pop)

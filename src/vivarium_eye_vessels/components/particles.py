@@ -57,50 +57,45 @@ class Particle3D(Component):
         """Initialize particles with positions, velocities, and path tracking information."""
         pop = pd.DataFrame(index=simulant_data.index)
 
-
         has_ellipsoid = "ellipsoid_containment" in self.builder.components.list_components()
-        
+
         if has_ellipsoid:
             # Get ellipsoid parameters
             config = self.builder.configuration.ellipsoid_containment
             a = float(config.a)
-            b = float(config.b) 
+            b = float(config.b)
             c = float(config.c)
-            
+
             # Generate points uniformly in an ellipsoid using rejection sampling
             n_particles = len(pop.index)
             accepted_points = []
-            
+
             while len(accepted_points) < n_particles:
                 # Generate random points in the bounding box
                 x = (2 * self.randomness.get_draw(pop.index, additional_key="x") - 1) * a
                 y = (2 * self.randomness.get_draw(pop.index, additional_key="y") - 1) * b
                 z = (2 * self.randomness.get_draw(pop.index, additional_key="z") - 1) * c
-                
+
                 # Check which points lie inside ellipsoid
-                inside = (x**2/a**2 + y**2/b**2 + z**2/c**2) <= 1
-                
+                inside = (x**2 / a**2 + y**2 / b**2 + z**2 / c**2) <= 1
+
                 # Add valid points
-                valid_points = pd.DataFrame({
-                    'x': x[inside],
-                    'y': y[inside], 
-                    'z': z[inside]
-                })
+                valid_points = pd.DataFrame({"x": x[inside], "y": y[inside], "z": z[inside]})
                 accepted_points.append(valid_points)
-                
+
                 if len(pd.concat(accepted_points)) >= n_particles:
                     break
-                    
+
             # Combine all points and take first n_particles
             all_points = pd.concat(accepted_points, ignore_index=True)
-            pop['x'] = all_points['x'].iloc[:n_particles]
-            pop['y'] = all_points['y'].iloc[:n_particles]
-            pop['z'] = all_points['z'].iloc[:n_particles]
-            
+            pop["x"] = all_points["x"].iloc[:n_particles]
+            pop["y"] = all_points["y"].iloc[:n_particles]
+            pop["z"] = all_points["z"].iloc[:n_particles]
+
         else:
             # Original initialization in unit cube
             pop["x"] = self.randomness.get_draw(pop.index, additional_key="x")
-            pop["y"] = self.randomness.get_draw(pop.index, additional_key="y") 
+            pop["y"] = self.randomness.get_draw(pop.index, additional_key="y")
             pop["z"] = self.randomness.get_draw(pop.index, additional_key="z")
 
         # Generate random initial velocities
@@ -168,7 +163,7 @@ class Particle3D(Component):
                 * max_velocity_change
             )
             particles.loc[:, v] += dv
-            particles.loc[:, v] = np.clip(particles.loc[:, v], -.1, .1)
+            particles.loc[:, v] = np.clip(particles.loc[:, v], -0.1, 0.1)
 
         self.population_view.update(particles)
 
@@ -370,42 +365,44 @@ class PathSplitter(Component):
 class PathExtinction(Component):
     """Component for controlling extinction of active paths over time."""
 
+    # TODO: consider making termination more likely when there is high force
+
     CONFIGURATION_DEFAULTS = {
-        'path_extinction': {
-            'extinction_start_time': '2020-01-01',  # When freezing starts
-            'extinction_end_time': '2020-12-31',    # When max probability reached
-            'initial_freeze_probability': 0.0,       # Starting freeze probability
-            'final_freeze_probability': 0.3,         # Target freeze probability
-            'check_interval': 5,                     # Steps between freeze checks
+        "path_extinction": {
+            "extinction_start_time": "2020-01-01",  # When freezing starts
+            "extinction_end_time": "2020-12-31",  # When max probability reached
+            "initial_freeze_probability": 0.0,  # Starting freeze probability
+            "final_freeze_probability": 0.3,  # Target freeze probability
+            "check_interval": 5,  # Steps between freeze checks
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
-        return ['frozen', 'path_id']
+        return ["frozen", "path_id"]
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_extinction
-        
+
         # Convert times to timestamps
         self.start_time = pd.Timestamp(self.config.extinction_start_time)
         self.end_time = pd.Timestamp(self.config.extinction_end_time)
-        
+
         # Get probability parameters
         self.p_start = self.config.initial_freeze_probability
         self.p_end = self.config.final_freeze_probability
-        
+
         # Setup time tracking
         self.clock = builder.time.clock()
         self.step_count = 0
-        
+
         # Setup randomness stream
-        self.randomness = builder.randomness.get_stream('path_extinction')
+        self.randomness = builder.randomness.get_stream("path_extinction")
 
     def get_current_freeze_probability(self) -> float:
         """Calculate current freeze probability based on time."""
         current_time = self.clock()
-        
+
         if current_time < self.start_time:
             return self.p_start
         elif current_time > self.end_time:
@@ -418,28 +415,26 @@ class PathExtinction(Component):
     def on_time_step(self, event: Event) -> None:
         """Check for path freezing on configured interval."""
         self.step_count += 1
-        
+
         if self.step_count % self.config.check_interval != 0:
             return
-            
+
         pop = self.population_view.get(event.index)
-        
+
         # Find active particles with paths
         active = pop[~pop.frozen & pop.path_id.notna()]
-        
+
         if active.empty:
             return
-            
+
         # Get current freeze probability
         p_freeze = self.get_current_freeze_probability()
-        
+
         # Randomly select paths to freeze
-        to_freeze = active[
-            self.randomness.get_draw(active.index) < p_freeze
-        ]
-        
+        to_freeze = active[self.randomness.get_draw(active.index) < p_freeze]
+
         if not to_freeze.empty:
-            to_freeze.loc[:, 'frozen'] = True
+            to_freeze.loc[:, "frozen"] = True
             self.population_view.update(to_freeze)
 
 
@@ -529,7 +524,8 @@ class FrozenParticleRepulsion(Component):
         # so we negate it to get a repulsive force
         force_magnitudes = np.where(
             (compression < 0) & different_paths,
-            -self.spring_constant * compression,  # Negative compression gives positive (repulsive) force
+            -self.spring_constant
+            * compression,  # Negative compression gives positive (repulsive) force
             0.0,
         )
 
