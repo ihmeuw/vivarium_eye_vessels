@@ -51,15 +51,57 @@ class Particle3D(Component):
         )
 
         self.randomness = builder.randomness.get_stream("particle.particles_3d")
+        self.builder = builder
 
     def on_initialize_simulants(self, simulant_data: SimulantData) -> None:
         """Initialize particles with positions, velocities, and path tracking information."""
         pop = pd.DataFrame(index=simulant_data.index)
 
-        # Generate random positions in [0,1) x [0,1) x [0,1)
-        pop["x"] = self.randomness.get_draw(pop.index, additional_key="x")
-        pop["y"] = self.randomness.get_draw(pop.index, additional_key="y")
-        pop["z"] = self.randomness.get_draw(pop.index, additional_key="z")
+
+        has_ellipsoid = "ellipsoid_containment" in self.builder.components.list_components()
+        
+        if has_ellipsoid:
+            # Get ellipsoid parameters
+            config = self.builder.configuration.ellipsoid_containment
+            a = float(config.a)
+            b = float(config.b) 
+            c = float(config.c)
+            
+            # Generate points uniformly in an ellipsoid using rejection sampling
+            n_particles = len(pop.index)
+            accepted_points = []
+            
+            while len(accepted_points) < n_particles:
+                # Generate random points in the bounding box
+                x = (2 * self.randomness.get_draw(pop.index, additional_key="x") - 1) * a
+                y = (2 * self.randomness.get_draw(pop.index, additional_key="y") - 1) * b
+                z = (2 * self.randomness.get_draw(pop.index, additional_key="z") - 1) * c
+                
+                # Check which points lie inside ellipsoid
+                inside = (x**2/a**2 + y**2/b**2 + z**2/c**2) <= 1
+                
+                # Add valid points
+                valid_points = pd.DataFrame({
+                    'x': x[inside],
+                    'y': y[inside], 
+                    'z': z[inside]
+                })
+                accepted_points.append(valid_points)
+                
+                if len(pd.concat(accepted_points)) >= n_particles:
+                    break
+                    
+            # Combine all points and take first n_particles
+            all_points = pd.concat(accepted_points, ignore_index=True)
+            pop['x'] = all_points['x'].iloc[:n_particles]
+            pop['y'] = all_points['y'].iloc[:n_particles]
+            pop['z'] = all_points['z'].iloc[:n_particles]
+            
+        else:
+            # Original initialization in unit cube
+            pop["x"] = self.randomness.get_draw(pop.index, additional_key="x")
+            pop["y"] = self.randomness.get_draw(pop.index, additional_key="y") 
+            pop["z"] = self.randomness.get_draw(pop.index, additional_key="z")
 
         # Generate random initial velocities
         v_range = self.initial_velocity_range
@@ -93,6 +135,11 @@ class Particle3D(Component):
                     center[2],
                 ]
                 pop.loc[i, "path_id"] = i
+                pop.loc[i, ["vx", "vy", "vz"]] = [
+                    -0.1,
+                    pop.loc[i, "vy"],
+                    0,
+                ]
 
         self.population_view.update(pop)
 
@@ -111,17 +158,17 @@ class Particle3D(Component):
             particles.loc[:, pos] = particles[pos] + self.step_size * particles[vel]
 
         # Get max velocity change from pipeline
-        max_velocity = self.max_velocity_change(particles.index)
+        max_velocity_change = self.max_velocity_change(particles.index)
 
         # Update velocities with random changes
         for v in ["vx", "vy", "vz"]:
             dv = (
                 (self.randomness.get_draw(particles.index, additional_key=f"d{v}") - 0.5)
                 * 2
-                * max_velocity
+                * max_velocity_change
             )
             particles.loc[:, v] += dv
-            particles.loc[:, v] = np.clip(particles.loc[:, v], -1, 1)
+            particles.loc[:, v] = np.clip(particles.loc[:, v], -.1, .1)
 
         self.population_view.update(particles)
 
