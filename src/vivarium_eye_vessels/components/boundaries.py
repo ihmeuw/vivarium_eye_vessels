@@ -10,117 +10,113 @@ from vivarium.framework.population import SimulantData
 
 class EllipsoidContainment(Component):
     """Component that keeps particles within an ellipsoid boundary using Hooke's law.
-
-    This component applies an inward spring force proportional to how far particles
-    have moved beyond the ellipsoid surface, pulling them back into the containment field.
+    
+    This version uses vectorized operations for improved performance.
     """
 
     CONFIGURATION_DEFAULTS = {
         "ellipsoid_containment": {
             "a": 1.0,  # Semi-major axis in x direction
-            "b": 1.0,  # Semi-major axis in y direction
+            "b": 1.0,  # Semi-major axis in y direction 
             "c": 1.0,  # Semi-major axis in z direction
             "spring_constant": 0.1,  # Spring constant for Hooke's law (force/distance)
         }
     }
 
-    @property
+    @property 
     def columns_required(self) -> List[str]:
         return ["x", "y", "z", "vx", "vy", "vz", "frozen"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the component."""
         self.config = builder.configuration.ellipsoid_containment
-
+        
         # Get semi-major axes from config
         self.a = float(self.config.a)
         self.b = float(self.config.b)
         self.c = float(self.config.c)
         self.spring_constant = float(self.config.spring_constant)
 
+        # Pre-compute squared denominators for gradient calculation
+        self.a2 = self.a * self.a
+        self.b2 = self.b * self.b  
+        self.c2 = self.c * self.c
+
         # Register with time stepping system
         builder.event.register_listener("time_step", self.on_time_step)
 
-    def calculate_ellipsoid_metrics(self, x: float, y: float, z: float) -> tuple[float, np.ndarray]:
-        """Calculate distance beyond ellipsoid surface and direction of restoring force.
+    def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
+        """Vectorized calculation of forces for all particles.
         
+        Parameters
+        ----------
+        positions : np.ndarray
+            Nx3 array of particle positions (x,y,z)
+            
         Returns
         -------
-        tuple[float, np.ndarray]
-            - Distance beyond surface (positive means outside ellipsoid)
-            - Unit vector pointing inward toward ellipsoid
+        np.ndarray
+            Nx3 array of force vectors
         """
-        # Calculate normalized radial distance
-        d = np.sqrt((x / self.a) ** 2 + (y / self.b) ** 2 + (z / self.c) ** 2)
+        # Calculate normalized radial distances
+        normalized_pos = positions * np.array([1/self.a, 1/self.b, 1/self.c])
+        d = np.sqrt(np.sum(normalized_pos * normalized_pos, axis=1))
         
-        if d < 1e-10:  # Handle point at origin
-            return 0.0, np.zeros(3)
-            
-        # Calculate how far beyond surface (positive means outside)
-        surface_distance = (d - 1.0)  
+        # Handle particles at origin
+        mask_origin = d < 1e-10
+        d[mask_origin] = 1e-10  # Avoid division by zero
         
-        # Calculate direction for force (pointing INWARD)
-        # Note: These are proportional to the gradient, but we negate to point inward
-        direction = np.array([
-            -x / (self.a**2 * d),
-            -y / (self.b**2 * d),
-            -z / (self.c**2 * d)
-        ])
+        # Calculate surface distances (positive means outside)
+        surface_distances = d - 1.0
         
-        # Normalize the direction vector
-        direction_magnitude = np.linalg.norm(direction)
-        if direction_magnitude > 0:
-            direction = direction / direction_magnitude
-            
-        return surface_distance, direction
-
-    def calculate_repulsion_force(
-        self, x: float, y: float, z: float
-    ) -> tuple[float, float, float]:
-        """Calculate the spring-like restoring force vector using Hooke's law."""
-        surface_distance, inward_direction = self.calculate_ellipsoid_metrics(x, y, z)
+        # Calculate direction vectors (proportional to gradient)
+        directions = -positions * np.array([1/self.a2, 1/self.b2, 1/self.c2])
+        directions = directions / d[:, np.newaxis]  # Normalize by radial distance
         
-        # Only apply force if outside ellipsoid (positive surface_distance)
-        if surface_distance <= 0:
-            return 0.0, 0.0, 0.0
-
-        # Apply Hooke's law: F = kx where:
-        # - k is spring constant
-        # - x is distance beyond surface
-        # - direction is already pointing inward
-        force_magnitude = self.spring_constant * surface_distance
-        force_vector = force_magnitude * inward_direction
+        # Normalize direction vectors
+        direction_magnitudes = np.linalg.norm(directions, axis=1)
+        mask_nonzero = direction_magnitudes > 0
+        directions[mask_nonzero] = directions[mask_nonzero] / direction_magnitudes[mask_nonzero, np.newaxis]
         
-        return force_vector[0], force_vector[1], force_vector[2]
+        # Only apply forces to particles outside ellipsoid
+        mask_outside = surface_distances > 0
+        
+        # Calculate force magnitudes using Hooke's law
+        force_magnitudes = np.zeros_like(surface_distances)
+        force_magnitudes[mask_outside] = self.spring_constant * surface_distances[mask_outside]
+        
+        # Calculate final force vectors
+        forces = directions * force_magnitudes[:, np.newaxis]
+        
+        # Zero out forces for particles at origin
+        forces[mask_origin] = 0
+        
+        return forces
 
     def on_time_step(self, event: Event) -> None:
-        """Apply restoring forces on each time step."""
+        """Apply restoring forces on each time step using vectorized operations."""
         # Get current state of all unfrozen particles
         pop = self.population_view.get(event.index, query="frozen == False")
         if pop.empty:
             return
 
-        # Calculate and apply forces for each particle
-        forces = np.array(
-            [
-                self.calculate_repulsion_force(row.x, row.y, row.z)
-                for idx, row in pop.iterrows()
-            ]
-        )
-
+        # Extract positions as numpy array
+        positions = pop[["x", "y", "z"]].to_numpy()
+        
+        # Calculate forces for all particles at once
+        forces = self.calculate_forces_vectorized(positions)
+        
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
-        pop["vx"] += forces[:, 0] * dt
-        pop["vy"] += forces[:, 1] * dt
-        pop["vz"] += forces[:, 2] * dt
-
+        pop[["vx", "vy", "vz"]] += forces * dt
+        
         # Update population
         self.population_view.update(pop)
 
 
 class CylinderExclusion(Component):
     """Component that repels particles from inside a cylindrical exclusion zone using Hooke's law.
-    Only considers radial distance from cylinder axis.
+    Only considers radial distance from cylinder axis. This version uses vectorized operations.
     """
 
     CONFIGURATION_DEFAULTS = {
@@ -147,78 +143,83 @@ class CylinderExclusion(Component):
         self.direction /= np.linalg.norm(self.direction)  # Ensure direction is a unit vector
         self.spring_constant = float(self.config.spring_constant)
 
+        # Pre-compute random perpendicular vector for axis cases
+        random_perpendicular = np.array([1, 0, 0]) if abs(self.direction[0]) < 0.9 else np.array([0, 1, 0])
+        self.default_outward = np.cross(self.direction, random_perpendicular)
+        self.default_outward /= np.linalg.norm(self.default_outward)
+
         # Register with time stepping system
         builder.event.register_listener("time_step", self.on_time_step)
 
-    def calculate_radial_penetration(self, x: float, y: float, z: float) -> tuple[float, np.ndarray]:
-        """Calculate radial penetration into cylinder and direction of force.
+    def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
+        """Vectorized calculation of forces for all particles.
         
-        Returns:
-        --------
-        tuple[float, np.ndarray]
-            - Penetration depth (positive means inside cylinder)
-            - Unit vector pointing radially outward
+        Parameters
+        ----------
+        positions : np.ndarray
+            Nx3 array of particle positions (x,y,z)
+            
+        Returns
+        -------
+        np.ndarray
+            Nx3 array of force vectors
         """
-        # Get vector from center to point
-        position = np.array([x, y, z], dtype=float) - self.center
-        
-        # Project onto cylinder axis
-        axial_component = np.dot(position, self.direction) * self.direction
-        
-        # Get radial vector (perpendicular to axis)
-        radial_vector = position - axial_component
-        radial_distance = np.linalg.norm(radial_vector)
+        # Calculate vectors from center to each point
+        rel_positions = positions - self.center
 
-        # Calculate penetration (positive means inside cylinder)
-        penetration = self.radius - radial_distance
-        
-        # Handle point exactly on axis with random outward direction
-        if radial_distance < 1e-10:
-            random_perpendicular = np.array([1, 0, 0]) if abs(self.direction[0]) < 0.9 else np.array([0, 1, 0])
-            outward_direction = np.cross(self.direction, random_perpendicular)
-            outward_direction /= np.linalg.norm(outward_direction)
-        else:
-            outward_direction = radial_vector / radial_distance
+        # Calculate axial components for all points at once
+        # Shape: (N,) array of dot products
+        axial_dots = np.dot(rel_positions, self.direction)
+        # Shape: (N,3) array of axial vectors
+        axial_components = axial_dots[:, np.newaxis] * self.direction
 
-        return penetration, outward_direction
+        # Calculate radial vectors
+        radial_vectors = rel_positions - axial_components
+        # Shape: (N,) array of radial distances
+        radial_distances = np.linalg.norm(radial_vectors, axis=1)
 
-    def calculate_repulsion_force(
-        self, x: float, y: float, z: float
-    ) -> tuple[float, float, float]:
-        """Calculate the spring-like repulsive force vector using Hooke's law."""
-        penetration, outward_direction = self.calculate_radial_penetration(x, y, z)
-        
-        # Only apply force if inside cylinder (positive penetration)
-        if penetration <= 0:
-            return 0.0, 0.0, 0.0
+        # Calculate penetration depths (positive inside cylinder)
+        penetrations = self.radius - radial_distances
 
-        # Apply Hooke's law: F = kx where x is penetration depth
-        # Force points outward when penetration is positive
-        force_magnitude = self.spring_constant * penetration
-        force_vector = force_magnitude * outward_direction
+        # Handle points on or very close to axis
+        mask_on_axis = radial_distances < 1e-10
+        outward_directions = np.zeros_like(positions)
         
-        return force_vector[0], force_vector[1], force_vector[2]
+        # For points not on axis, calculate actual outward direction
+        mask_off_axis = ~mask_on_axis
+        outward_directions[mask_off_axis] = radial_vectors[mask_off_axis] / radial_distances[mask_off_axis, np.newaxis]
+        
+        # For points on axis, use pre-computed default outward direction
+        outward_directions[mask_on_axis] = self.default_outward
+
+        # Only apply forces to particles inside cylinder
+        mask_inside = penetrations > 0
+        
+        # Calculate force magnitudes using Hooke's law
+        force_magnitudes = np.zeros_like(radial_distances)
+        force_magnitudes[mask_inside] = self.spring_constant * penetrations[mask_inside]
+        
+        # Calculate final force vectors
+        forces = outward_directions * force_magnitudes[:, np.newaxis]
+        
+        return forces
 
     def on_time_step(self, event: Event) -> None:
-        """Apply repulsion forces on each time step."""
+        """Apply repulsion forces on each time step using vectorized operations."""
         # Get current state of all unfrozen particles
         pop = self.population_view.get(event.index, query="frozen == False")
         if pop.empty:
             return
 
-        # Calculate and apply forces for each particle
-        forces = np.array(
-            [
-                self.calculate_repulsion_force(row.x, row.y, row.z)
-                for idx, row in pop.iterrows()
-            ]
-        )
-
+        # Extract positions as numpy array
+        positions = pop[["x", "y", "z"]].to_numpy()
+        
+        # Calculate forces for all particles at once
+        forces = self.calculate_forces_vectorized(positions)
+        
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
-        pop["vx"] += forces[:, 0] * dt
-        pop["vy"] += forces[:, 1] * dt
-        pop["vz"] += forces[:, 2] * dt
-
+        pop[["vx", "vy", "vz"]] += forces * dt
+        
         # Update population
         self.population_view.update(pop)
