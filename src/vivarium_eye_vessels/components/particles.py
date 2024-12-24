@@ -627,9 +627,9 @@ class PathDLA(Component):
         if frozen.empty:
             return
 
-        # Consider only non-frozen particles
-        not_frozen = pop[~pop.frozen]
-
+        # Consider only non-frozen particles that aren't actively extending paths
+        not_frozen = pop[~pop.frozen & pop.path_id.isna()]
+        
         # If no not_frozen particles, nothing to do
         if not_frozen.empty:
             return
@@ -668,6 +668,8 @@ class PathDLA(Component):
             
             # Assign the parent_id of the nearest frozen particle
             to_freeze["parent_id"] = frozen.index[nearest_frozen_indices.flatten()].astype(object)
+            to_freeze["path_id"] = -1.0
+            to_freeze["path_id"] = to_freeze["path_id"].astype(object)
             to_freeze["frozen"] = True
 
             # Update the population

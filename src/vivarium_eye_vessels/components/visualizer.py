@@ -514,24 +514,15 @@ class ParticleVisualizer3D(Component):
         for surface, pos in self.control_surfaces:
             self.screen.blit(surface, pos)
 
-    def _calculate_path_branching(self, population: pd.DataFrame) -> None:
+    def _calculate_path_widths(self, population: pd.DataFrame) -> None:
         """Calculate branching counts and path widths for all paths using optimized methods."""
         # Drop NaN parent_ids and convert to integers
-        parent_ids = population["parent_id"].dropna().astype(int)
+        parent_ids = population["path_id"].dropna()
 
-        # Count the number of children for each parent_id
-        child_counts = parent_ids.value_counts()
+        path_widths = parent_ids.map({-1:1}).fillna(
+                               self.config["base_path_width"])
 
-        # Map child counts to each particle's parent_id
-        counts = population["parent_id"].map(child_counts).fillna(1)
-
-        # Calculate path widths: base_width divided by sqrt(child_counts)
-        path_widths = self.config["base_path_width"] / np.sqrt(counts)
-
-        # Ensure minimum width of 1 and convert to integers
-        path_widths = path_widths.clip(lower=1).astype(int).values
-
-        self.path_widths = path_widths
+        return path_widths.astype(int)
 
     def _draw_connections(
         self,
@@ -541,8 +532,7 @@ class ParticleVisualizer3D(Component):
         surface: pygame.Surface,
     ) -> None:
         """Draw connections between particles with varying line thickness based on branching."""
-        if self.path_widths is None:
-            self._calculate_path_branching(population)
+        path_widths = self._calculate_path_widths(population)
 
         parent_ids = population["parent_id"].values
 
@@ -558,7 +548,7 @@ class ParticleVisualizer3D(Component):
                 if mask[parent_index] and mask[idx]:
                     start_pos = screen_points[parent_index]
                     end_pos = screen_points[idx]
-                    width = self.path_widths[idx]
+                    width = path_widths[idx]
                     pygame.draw.line(
                         surface, self.config["path_color"], start_pos, end_pos, width
                     )
