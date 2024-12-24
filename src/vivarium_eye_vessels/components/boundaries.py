@@ -11,7 +11,7 @@ from vivarium.framework.population import SimulantData
 class EllipsoidContainment(Component):
     """Component that keeps particles within an ellipsoid boundary using Hooke's law.
 
-    This version uses vectorized operations for improved performance.
+    This version uses vectorized operations for improved performance and stores forces.
     """
 
     CONFIGURATION_DEFAULTS = {
@@ -25,7 +25,7 @@ class EllipsoidContainment(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen"]
+        return ["x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "frozen"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the component."""
@@ -41,9 +41,6 @@ class EllipsoidContainment(Component):
         self.a2 = self.a * self.a
         self.b2 = self.b * self.b
         self.c2 = self.c * self.c
-
-        # Register with time stepping system
-        builder.event.register_listener("time_step", self.on_time_step)
 
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
         """Vectorized calculation of forces for all particles.
@@ -76,18 +73,14 @@ class EllipsoidContainment(Component):
         # Normalize direction vectors
         direction_magnitudes = np.linalg.norm(directions, axis=1)
         mask_nonzero = direction_magnitudes > 0
-        directions[mask_nonzero] = (
-            directions[mask_nonzero] / direction_magnitudes[mask_nonzero, np.newaxis]
-        )
+        directions[mask_nonzero] = directions[mask_nonzero] / direction_magnitudes[mask_nonzero, np.newaxis]
 
         # Only apply forces to particles outside ellipsoid
         mask_outside = surface_distances > 0
 
         # Calculate force magnitudes using Hooke's law
         force_magnitudes = np.zeros_like(surface_distances)
-        force_magnitudes[mask_outside] = (
-            self.spring_constant * surface_distances[mask_outside]
-        )
+        force_magnitudes[mask_outside] = self.spring_constant * surface_distances[mask_outside]
 
         # Calculate final force vectors
         forces = directions * force_magnitudes[:, np.newaxis]
@@ -98,7 +91,7 @@ class EllipsoidContainment(Component):
         return forces
 
     def on_time_step(self, event: Event) -> None:
-        """Apply restoring forces on each time step using vectorized operations."""
+        """Apply and store restoring forces on each time step using vectorized operations."""
         # Get current state of all unfrozen particles
         pop = self.population_view.get(event.index, query="frozen == False")
         if pop.empty:
@@ -110,6 +103,9 @@ class EllipsoidContainment(Component):
         # Calculate forces for all particles at once
         forces = self.calculate_forces_vectorized(positions)
 
+        # Store forces in population
+        pop.loc[:, ["fx", "fy", "fz"]] += forces
+
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
         pop[["vx", "vy", "vz"]] += forces * dt
@@ -120,25 +116,21 @@ class EllipsoidContainment(Component):
 
 class CylinderExclusion(Component):
     """Component that repels particles from inside a cylindrical exclusion zone using Hooke's law.
-    Only considers radial distance from cylinder axis. This version uses vectorized operations.
+    Only considers radial distance from cylinder axis. This version uses vectorized operations and stores forces.
     """
 
     CONFIGURATION_DEFAULTS = {
         "cylinder_exclusion": {
             "radius": 1.0,  # Radius of the cylinder
             "center": [0.0, 0.0, 0.0],  # Center of the cylinder
-            "direction": [
-                0.0,
-                0.0,
-                1.0,
-            ],  # Direction vector of the cylinder (default along z-axis)
+            "direction": [0.0, 0.0, 1.0],  # Direction vector of cylinder (default along z-axis)
             "spring_constant": 0.1,  # Spring constant for Hooke's law (force/distance)
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen"]
+        return ["x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "frozen"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the component."""
@@ -152,14 +144,9 @@ class CylinderExclusion(Component):
         self.spring_constant = float(self.config.spring_constant)
 
         # Pre-compute random perpendicular vector for axis cases
-        random_perpendicular = (
-            np.array([1, 0, 0]) if abs(self.direction[0]) < 0.9 else np.array([0, 1, 0])
-        )
+        random_perpendicular = np.array([1, 0, 0]) if abs(self.direction[0]) < 0.9 else np.array([0, 1, 0])
         self.default_outward = np.cross(self.direction, random_perpendicular)
         self.default_outward /= np.linalg.norm(self.default_outward)
-
-        # Register with time stepping system
-        builder.event.register_listener("time_step", self.on_time_step)
 
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
         """Vectorized calculation of forces for all particles.
@@ -178,14 +165,11 @@ class CylinderExclusion(Component):
         rel_positions = positions - self.center
 
         # Calculate axial components for all points at once
-        # Shape: (N,) array of dot products
         axial_dots = np.dot(rel_positions, self.direction)
-        # Shape: (N,3) array of axial vectors
         axial_components = axial_dots[:, np.newaxis] * self.direction
 
         # Calculate radial vectors
         radial_vectors = rel_positions - axial_components
-        # Shape: (N,) array of radial distances
         radial_distances = np.linalg.norm(radial_vectors, axis=1)
 
         # Calculate penetration depths (positive inside cylinder)
@@ -197,9 +181,7 @@ class CylinderExclusion(Component):
 
         # For points not on axis, calculate actual outward direction
         mask_off_axis = ~mask_on_axis
-        outward_directions[mask_off_axis] = (
-            radial_vectors[mask_off_axis] / radial_distances[mask_off_axis, np.newaxis]
-        )
+        outward_directions[mask_off_axis] = radial_vectors[mask_off_axis] / radial_distances[mask_off_axis, np.newaxis]
 
         # For points on axis, use pre-computed default outward direction
         outward_directions[mask_on_axis] = self.default_outward
@@ -217,7 +199,7 @@ class CylinderExclusion(Component):
         return forces
 
     def on_time_step(self, event: Event) -> None:
-        """Apply repulsion forces on each time step using vectorized operations."""
+        """Apply and store repulsion forces on each time step using vectorized operations."""
         # Get current state of all unfrozen particles
         pop = self.population_view.get(event.index, query="frozen == False")
         if pop.empty:
@@ -229,6 +211,9 @@ class CylinderExclusion(Component):
         # Calculate forces for all particles at once
         forces = self.calculate_forces_vectorized(positions)
 
+        # Store forces in population
+        pop.loc[:, ["fx", "fy", "fz"]] += forces
+
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
         pop[["vx", "vy", "vz"]] += forces * dt
@@ -237,17 +222,8 @@ class CylinderExclusion(Component):
         self.population_view.update(pop)
 
 
-from typing import List
-
-import numpy as np
-import pandas as pd
-from vivarium import Component
-from vivarium.framework.engine import Builder
-from vivarium.framework.event import Event
-
-
 class MagneticRepulsion(Component):
-    """Component that creates a point-based magnetic attraction for active particles."""
+    """Component that creates a point-based magnetic repulsion for active particles and stores forces."""
 
     CONFIGURATION_DEFAULTS = {
         "magnetic_repulsion": {
@@ -263,7 +239,7 @@ class MagneticRepulsion(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "path_id"]
+        return ["x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "frozen", "path_id"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the magnetic component."""
@@ -303,7 +279,6 @@ class MagneticRepulsion(Component):
         distances = np.maximum(distances, self.min_distance)
         
         # Calculate force magnitudes (inverse square law)
-        # Force decreases with square of distance
         force_magnitudes = self.strength / (distances ** 2)
         
         # Calculate normalized direction vectors
@@ -311,13 +286,13 @@ class MagneticRepulsion(Component):
             direction_vectors = displacements / distances[:, np.newaxis]
         direction_vectors = np.nan_to_num(direction_vectors)
         
-        # Calculate force vectors
+        # Calculate force vectors (negative for repulsion)
         forces = -direction_vectors * force_magnitudes[:, np.newaxis]
         
         return forces
 
     def on_time_step(self, event: Event) -> None:
-        """Apply magnetic forces on each time step."""
+        """Apply and store magnetic forces on each time step."""
         # Get current state of all particles
         pop = self.population_view.get(event.index)
         if pop.empty:
@@ -336,12 +311,12 @@ class MagneticRepulsion(Component):
         # Calculate forces
         forces = self.calculate_magnetic_forces(positions)
         
+        # Store forces in population
+        active.loc[:, ["fx", "fy", "fz"]] += forces
+        
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
-        
-        active.loc[:, "vx"] += forces[:, 0] * dt
-        active.loc[:, "vy"] += forces[:, 1] * dt
-        active.loc[:, "vz"] += forces[:, 2] * dt
+        active[["vx", "vy", "vz"]] += forces * dt
         
         # Update population
         self.population_view.update(active)
