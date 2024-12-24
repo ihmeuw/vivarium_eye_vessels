@@ -172,7 +172,7 @@ class Particle3D(Component):
     def check_blocked_paths(self, particles: pd.DataFrame, step_size: pd.Timedelta) -> None:
         """Check for and handle blocked paths based on force magnitude."""
         # Calculate total force magnitude
-        particles["force_magnitude"] = np.sqrt(
+        particles.loc[:, "force_magnitude"] = np.sqrt(
             particles["fx"]**2 + particles["fy"]**2 + particles["fz"]**2
         )
 
@@ -305,6 +305,7 @@ class PathSplitter(Component):
         if len(available) < len(to_split):
             return
 
+        import pdb; pdb.set_trace()
         new_branches = available.sample(len(to_split))
         angle_rad = np.radians(self.config.split_angle / 2)
 
@@ -537,13 +538,19 @@ class FrozenParticleRepulsion(Component):
 
 
 class PathDLA(Component):
-    """Component for freezing particles at the end of a path using DLA."""
+    """Component for freezing particles at the end of a path using DLA.
+    
+    The near radius scales exponentially from initial_near_radius to final_near_radius
+    between dla_start_time and dla_end_time.
+    """
 
     CONFIGURATION_DEFAULTS = {
         "path_dla": {
             "stickiness": 0.9,
-            "near_radius": 0.1,
-            "dla_start_time": "2000-01-01",  # Default start time for DLA freezing
+            "initial_near_radius": 0.1,
+            "final_near_radius": 0.01,
+            "dla_start_time": "2000-01-01",  # Start time for DLA freezing
+            "dla_end_time": "2001-01-01",    # End time for radius scaling
         }
     }
 
@@ -557,14 +564,49 @@ class PathDLA(Component):
         ]
 
     def setup(self, builder: Builder) -> None:
+        """Setup the component with configuration and validate parameters."""
         self.config = builder.configuration.path_dla
         self.randomness = builder.randomness.get_stream("path_dla")
         self.clock = builder.time.clock()
+        
+        # Convert times to pandas Timestamps
         self.dla_start_time = pd.Timestamp(self.config.dla_start_time)
+        self.dla_end_time = pd.Timestamp(self.config.dla_end_time)
+        
+        # Validate configuration
+        if self.dla_end_time <= self.dla_start_time:
+            raise ValueError("dla_end_time must be after dla_start_time")
+        
+        if self.config.initial_near_radius <= 0 or self.config.final_near_radius <= 0:
+            raise ValueError("near radius values must be positive")
+            
+        if self.config.final_near_radius > self.config.initial_near_radius:
+            raise ValueError("final_near_radius must be smaller than initial_near_radius")
+            
+        # Calculate decay rate for exponential scaling
+        total_time = (self.dla_end_time - self.dla_start_time).total_seconds()
+        self.decay_rate = -np.log(self.config.final_near_radius / self.config.initial_near_radius) / total_time
+
+    def get_current_near_radius(self) -> float:
+        """Calculate the current near radius based on exponential decay."""
+        current_time = self.clock()
+        
+        if current_time < self.dla_start_time:
+            return self.config.initial_near_radius
+        elif current_time > self.dla_end_time:
+            return self.config.final_near_radius
+        
+        # Calculate time since start
+        time_elapsed = (current_time - self.dla_start_time).total_seconds()
+        
+        # Calculate exponentially decayed radius
+        current_radius = self.config.initial_near_radius * np.exp(-self.decay_rate * time_elapsed)
+        return current_radius
 
     def on_time_step(self, event: Event) -> None:
-        # Only perform DLA freezing if we're after the start time
+        """Perform DLA freezing with current near radius if after start time."""
         if self.clock() >= self.dla_start_time:
+            self.near_radius = self.get_current_near_radius()
             pop = self.population_view.get(event.index)
             self.dla_freeze(pop)
 
@@ -582,7 +624,7 @@ class PathDLA(Component):
 
         tree = sklearn.neighbors.KDTree(frozen[["x", "y", "z"]].values, leaf_size=2)
         near_frozen_indices = tree.query_radius(
-            not_frozen[["x", "y", "z"]].values, r=self.config.near_radius
+            not_frozen[["x", "y", "z"]].values, r=self.near_radius
         )
         
         near_particles = np.array([len(indices) > 0 for indices in near_frozen_indices])
@@ -600,7 +642,7 @@ class PathDLA(Component):
             )
             
             to_freeze["parent_id"] = frozen.index[nearest_frozen_indices.flatten()].astype(object)
-            to_freeze["path_id"] = -1.0
+            to_freeze["path_id"] = -1
             to_freeze["path_id"] = to_freeze["path_id"].astype(object)
             to_freeze["frozen"] = True
             

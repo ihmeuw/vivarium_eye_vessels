@@ -84,6 +84,80 @@ class ParticleVisualizer3D(Component):
         self.particle_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.connection_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
+    def on_simulation_end(self, event: Event) -> None:
+            """Keep the visualization window open until user exits.
+
+            Parameters
+            ----------
+            event : Event
+                The event that triggered the function call.
+            """
+            population = self.population_view.get(event.index)
+            
+            # Draw one final frame
+            self.screen.fill(self.config["background_color"])
+            
+            # Calculate rotation matrix for final frame
+            cy, sy = np.cos(self.y_rotation), np.sin(self.y_rotation)
+            cx, sx = np.cos(self.x_rotation), np.sin(self.x_rotation)
+            cz, sz = np.cos(self.z_rotation), np.sin(self.z_rotation)
+            
+            y_rotation_matrix = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+            x_rotation_matrix = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+            z_rotation_matrix = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+            
+            rotation_matrix = z_rotation_matrix @ x_rotation_matrix @ y_rotation_matrix
+            
+            # Project points and prepare colors
+            points = population[["x", "y", "z"]].values
+            screen_points, mask = self._project_points(points, rotation_matrix)
+            
+            colors = np.where(
+                population["frozen"].values[:, np.newaxis],
+                self.config["frozen_color"],
+                self.config["particle_color"]
+            )
+            
+            # Clear surfaces
+            self.connection_surface.fill((0, 0, 0, 0))
+            self.particle_surface.fill((0, 0, 0, 0))
+            
+            # Draw final state
+            self._draw_connections(population, screen_points, mask, self.connection_surface)
+            self._draw_particles(screen_points, colors, mask, self.particle_surface)
+            self.screen.blit(self.connection_surface, (0, 0))
+            self.screen.blit(self.particle_surface, (0, 0))
+            
+            # Draw additional elements
+            if self.has_ellipsoid:
+                self._draw_ellipsoid(rotation_matrix)
+            if self.has_cylinder:
+                self._draw_cylinder(rotation_matrix)
+            
+            self._draw_axes(rotation_matrix)
+            self._draw_progress_bar()
+            self._draw_fps()
+            self._draw_controls_help()
+            
+            pygame.display.flip()
+            
+            self._wait_for_exit()
+
+    def _wait_for_exit(self) -> None:
+        """Run an event loop until the user exits."""
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT or (
+                    event.type == pygame.KEYDOWN and event.key in [pygame.K_ESCAPE, pygame.K_q]
+                ):
+                    running = False
+                    pygame.quit()
+                    return
+
+            # Small sleep to prevent maxing out CPU
+            pygame.time.wait(50)
+
     def _setup_ellipsoid(self, builder: Builder):
         if "ellipsoid_containment" in builder.components.list_components():
             try:
@@ -409,9 +483,9 @@ class ParticleVisualizer3D(Component):
             self.z_rotation += self.config["manual_rotation_step"]
 
         # WASD movement for x and y axes
-        if keys[pygame.K_w]:
-            self.camera_pos[1] -= self.config["movement_speed"]
         if keys[pygame.K_s]:
+            self.camera_pos[1] -= self.config["movement_speed"]
+        if keys[pygame.K_w]:
             self.camera_pos[1] += self.config["movement_speed"]
         if keys[pygame.K_a]:
             self.camera_pos[0] -= self.config["movement_speed"]

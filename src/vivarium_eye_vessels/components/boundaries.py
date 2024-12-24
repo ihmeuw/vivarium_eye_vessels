@@ -316,7 +316,7 @@ class MagneticRepulsion(Component):
         
         # Update velocities based on forces
         dt = event.step_size / pd.Timedelta(days=1)
-        active[["vx", "vy", "vz"]] += forces * dt
+        active.loc[:, ["vx", "vy", "vz"]] += forces * dt
         
         # Update population
         self.population_view.update(active)
