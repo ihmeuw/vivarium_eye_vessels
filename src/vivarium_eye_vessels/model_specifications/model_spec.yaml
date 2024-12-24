@@ -55,8 +55,9 @@ configuration:
         check_interval: 30
 
     path_dla:
+        dla_start_time: '2025-01-01'
         stickiness: 1.0            # Probability of sticking when near frozen particle
-        near_radius: 0.01           # Distance for checking proximity to frozen particles
+        near_radius: 0.05           # Distance for checking proximity to frozen particles
 
     frozen_repulsion:
         spring_constant: 0.5  # Spring constant for Hooke's law (force/distance)

@@ -189,6 +189,8 @@ class Particle3D(Component):
         
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
+            to_freeze.loc[:, "path_id"] = -1
+
             self.population_view.update(to_freeze)
 
 
@@ -409,6 +411,7 @@ class PathExtinction(Component):
 
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
+            to_freeze.loc[:, "path_id"] = -1
             self.population_view.update(to_freeze)
 
 
@@ -540,6 +543,7 @@ class PathDLA(Component):
         "path_dla": {
             "stickiness": 0.9,
             "near_radius": 0.1,
+            "dla_start_time": "2000-01-01",  # Default start time for DLA freezing
         }
     }
 
@@ -555,14 +559,20 @@ class PathDLA(Component):
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_dla
         self.randomness = builder.randomness.get_stream("path_dla")
+        self.clock = builder.time.clock()
+        self.dla_start_time = pd.Timestamp(self.config.dla_start_time)
 
     def on_time_step(self, event: Event) -> None:
-        pop = self.population_view.get(event.index)
-        self.dla_freeze(pop)
+        # Only perform DLA freezing if we're after the start time
+        if self.clock() >= self.dla_start_time:
+            pop = self.population_view.get(event.index)
+            self.dla_freeze(pop)
 
     def dla_freeze(self, pop: pd.DataFrame) -> None:
-        """Freeze particles near frozen particles using DLA."""
-        frozen = pop[pop.frozen]
+        """Freeze particles near frozen particles using DLA.
+        Only freeze to particles with path_id < 0
+        """
+        frozen = pop[pop.frozen & (pop.path_id < 0)]
         if frozen.empty:
             return
 
