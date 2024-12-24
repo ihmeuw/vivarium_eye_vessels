@@ -2,14 +2,14 @@ components:
     vivarium_eye_vessels.components:
         - particles.Particle3D()
         - particles.PathFreezer()
-        - particles.PathSplitter()
+        # - particles.PathSplitter()
         - particles.PathExtinction()
         - particles.FrozenParticleRepulsion()
         - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
         - boundaries.MagneticRepulsion()
-        # - visualizer.ParticleVisualizer3D()
+        - visualizer.ParticleVisualizer3D()
 
 configuration:
     randomness:
@@ -25,7 +25,7 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 200
+        population_size: 1_000
 
     # Base particle configuration
     particles:
@@ -35,7 +35,7 @@ configuration:
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.1                # Radius of the circle
-            n_vessels: 6               # Number of frozen particles in the circle
+            n_vessels: 1               # Number of frozen particles in the circle
         force_blocking_threshold: 0.25 # Threshold for considering a particle blocked
         blocked_time_threshold: 0.0    # Time threshold (in simulation days) for terminating blocked paths
 
@@ -71,7 +71,7 @@ configuration:
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.0625  # Ellipsoid z semi-major axis
+        c: 0.03  # Ellipsoid z semi-major axis
         spring_constant: 0.5
     
     cylinder_exclusion:

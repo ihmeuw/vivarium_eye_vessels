@@ -291,54 +291,112 @@ class PathSplitter(Component):
             self.split_paths(pop)
 
     def split_paths(self, pop: pd.DataFrame) -> None:
-        """Split eligible paths into two branches."""
+        """Split eligible paths into two branches, freezing the original particle."""
+        # Get active particles that have valid path_ids
         active = pop[~pop.frozen & pop.path_id.notna()]
         if active.empty:
             return
 
+        # Determine which paths will split
         split_mask = self.randomness.get_draw(active.index) < self.config.split_probability
         to_split = active[split_mask]
         if to_split.empty:
             return
 
+        # Find available particles for new branches - need two per split
         available = pop[~pop.frozen & pop.path_id.isna()]
-        if len(available) < len(to_split):
+        if len(available) < 2 * len(to_split):
             return
 
-        import pdb; pdb.set_trace()
-        new_branches = available.sample(len(to_split))
+        # Sample particles for new branches - two per split point
+        new_branches = available.sample(2 * len(to_split))
         angle_rad = np.radians(self.config.split_angle / 2)
 
-        for idx, (_, original) in enumerate(to_split.iterrows()):
+        # Small offset distance for initial positions
+        offset_distance = 0.05  # Adjust as needed
+
+        # Track updates for frozen originals and new branches
+        updates = []
+
+        for idx, (orig_idx, original) in enumerate(to_split.iterrows()):
             vel = np.array([original.vx, original.vy, original.vz])
             speed = np.linalg.norm(vel)
             if speed == 0:
                 continue
 
+            # Calculate normalized velocity and perpendicular vector
             vel_norm = vel / speed
             perp = np.array([-vel_norm[1], vel_norm[0], 0])
             if np.all(perp == 0):
                 perp = np.array([0, -vel_norm[2], vel_norm[1]])
             perp = perp / np.linalg.norm(perp)
 
-            rot_matrix = self._rotation_matrix(perp, angle_rad)
-            new_vel_1 = rot_matrix @ vel
-            rot_matrix = self._rotation_matrix(perp, -angle_rad)
-            new_vel_2 = rot_matrix @ vel
+            # Calculate new velocities for both branches
+            rot_matrix_1 = self._rotation_matrix(perp, angle_rad)
+            rot_matrix_2 = self._rotation_matrix(perp, -angle_rad)
+            new_vel_1 = rot_matrix_1 @ vel
+            new_vel_2 = rot_matrix_2 @ vel
 
-            to_split.loc[original.name, ["vx", "vy", "vz"]] = new_vel_1
+            # Normalize new velocities for position offsets
+            new_vel_1_norm = new_vel_1 / np.linalg.norm(new_vel_1)
+            new_vel_2_norm = new_vel_2 / np.linalg.norm(new_vel_2)
 
-            new_branch = new_branches.iloc[idx]
-            new_branches.loc[new_branch.name, ["x", "y", "z"]] = [
-                original.x, original.y, original.z
-            ]
-            new_branches.loc[new_branch.name, ["vx", "vy", "vz"]] = new_vel_2
-            new_branches.loc[new_branch.name, ["fx", "fy", "fz"]] = [0, 0, 0]  # Reset forces
-            new_branches.loc[new_branch.name, "path_id"] = self.next_path_id
-            new_branches.loc[new_branch.name, "parent_id"] = original.name
-            self.next_path_id += 1
+            # Calculate offset positions
+            original_pos = np.array([original.x, original.y, original.z])
+            pos_1 = original_pos + offset_distance * new_vel_1_norm
+            pos_2 = original_pos + offset_distance * new_vel_2_norm
 
-        self.population_view.update(pd.concat([to_split, new_branches]))
+            # Create DataFrame rows with correct dtypes from the start
+            # Freeze original particle at split point
+            original_update = pd.DataFrame(
+                {
+                    'x': [original.x], 'y': [original.y], 'z': [original.z],
+                    'vx': [original.vx], 'vy': [original.vy], 'vz': [original.vz],
+                    'fx': [0.0], 'fy': [0.0], 'fz': [0.0],
+                    'frozen': [True],
+                    'path_id': [-1],
+                    'parent_id': [original.parent_id],
+                }, index=[orig_idx]
+            )
+            updates.append(original_update)
+            
+            # Create first new branch
+            new_branch_1 = pd.DataFrame(
+                {
+                    'x': [pos_1[0]], 'y': [pos_1[1]], 'z': [pos_1[2]],
+                    'vx': [new_vel_1[0]], 'vy': [new_vel_1[1]], 'vz': [new_vel_1[2]],
+                    'fx': [0.0], 'fy': [0.0], 'fz': [0.0],
+                    'frozen': [False],
+                    'path_id': [self.next_path_id],
+                    'parent_id': [orig_idx],
+                }, index=[new_branches.iloc[2*idx].name]
+            )
+            updates.append(new_branch_1)
+            
+            # Create second new branch
+            new_branch_2 = pd.DataFrame(
+                {
+                    'x': [pos_2[0]], 'y': [pos_2[1]], 'z': [pos_2[2]],
+                    'vx': [new_vel_2[0]], 'vy': [new_vel_2[1]], 'vz': [new_vel_2[2]],
+                    'fx': [0.0], 'fy': [0.0], 'fz': [0.0],
+                    'frozen': [False],
+                    'path_id': [self.next_path_id + 1],
+                    'parent_id': [orig_idx],
+                }, index=[new_branches.iloc[2*idx + 1].name]
+            )
+            updates.append(new_branch_2)
+            
+            self.next_path_id += 2
+
+        if updates:
+            # Combine all updates with consistent dtypes
+            all_updates = pd.concat(updates, axis=0)
+            
+            # Ensure object dtypes for id columns
+            all_updates['path_id'] = all_updates['path_id'].astype(object)
+            all_updates['parent_id'] = all_updates['parent_id'].astype(object)
+            
+            self.population_view.update(all_updates)
 
     @staticmethod
     def _rotation_matrix(axis: np.ndarray, theta: float) -> np.ndarray:
