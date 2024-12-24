@@ -235,3 +235,113 @@ class CylinderExclusion(Component):
 
         # Update population
         self.population_view.update(pop)
+
+
+from typing import List
+
+import numpy as np
+import pandas as pd
+from vivarium import Component
+from vivarium.framework.engine import Builder
+from vivarium.framework.event import Event
+
+
+class MagneticRepulsion(Component):
+    """Component that creates a point-based magnetic attraction for active particles."""
+
+    CONFIGURATION_DEFAULTS = {
+        "magnetic_repulsion": {
+            "position": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+            },
+            "strength": 0.05,  # Magnetic field strength
+            "min_distance": 0.1,  # Minimum distance before force capping
+        }
+    }
+
+    @property
+    def columns_required(self) -> List[str]:
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "path_id"]
+
+    def setup(self, builder: Builder) -> None:
+        """Setup the magnetic component."""
+        self.config = builder.configuration.magnetic_repulsion
+        
+        # Get position parameters
+        self.position = np.array([
+            float(self.config.position.x),
+            float(self.config.position.y),
+            float(self.config.position.z)
+        ])
+        
+        # Get other parameters
+        self.strength = float(self.config.strength)
+        self.min_distance = float(self.config.min_distance)
+
+    def calculate_magnetic_forces(self, positions: np.ndarray) -> np.ndarray:
+        """Calculate magnetic forces on particles based on their positions.
+        
+        Parameters
+        ----------
+        positions : np.ndarray
+            Array of shape (n_particles, 3) containing particle positions
+            
+        Returns
+        -------
+        np.ndarray
+            Array of shape (n_particles, 3) containing force vectors
+        """
+        # Calculate displacement vectors from magnetic source to particles
+        displacements = self.position - positions
+        
+        # Calculate distances
+        distances = np.sqrt(np.sum(displacements**2, axis=1))
+        
+        # Apply minimum distance to prevent excessive forces
+        distances = np.maximum(distances, self.min_distance)
+        
+        # Calculate force magnitudes (inverse square law)
+        # Force decreases with square of distance
+        force_magnitudes = self.strength / (distances ** 2)
+        
+        # Calculate normalized direction vectors
+        with np.errstate(invalid='ignore', divide='ignore'):
+            direction_vectors = displacements / distances[:, np.newaxis]
+        direction_vectors = np.nan_to_num(direction_vectors)
+        
+        # Calculate force vectors
+        forces = -direction_vectors * force_magnitudes[:, np.newaxis]
+        
+        return forces
+
+    def on_time_step(self, event: Event) -> None:
+        """Apply magnetic forces on each time step."""
+        # Get current state of all particles
+        pop = self.population_view.get(event.index)
+        if pop.empty:
+            return
+        
+        # Get active particles (not frozen and with a path)
+        active_mask = (~pop.frozen) & (pop.path_id.notna())
+        active = pop[active_mask]
+        
+        if len(active) == 0:
+            return
+            
+        # Get positions as numpy array
+        positions = active[["x", "y", "z"]].values
+        
+        # Calculate forces
+        forces = self.calculate_magnetic_forces(positions)
+        
+        # Update velocities based on forces
+        dt = event.step_size / pd.Timedelta(days=1)
+        
+        active.loc[:, "vx"] += forces[:, 0] * dt
+        active.loc[:, "vy"] += forces[:, 1] * dt
+        active.loc[:, "vz"] += forces[:, 2] * dt
+        
+        # Update population
+        self.population_view.update(active)

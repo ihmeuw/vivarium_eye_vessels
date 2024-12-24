@@ -132,9 +132,7 @@ class Particle3D(Component):
                     center[2],
                 ]
                 pop.loc[i, "path_id"] = i
-                pop.loc[i, ["vx", "vy", "vz"]] = [
-                    -0.1,
-                    pop.loc[i, "vy"],
+                pop.loc[i, ["vz"]] = [
                     0,
                 ]
 
@@ -659,7 +657,7 @@ class PathDLA(Component):
         freeze_mask = near_particles & freeze_condition
 
         # Freeze the selected particles and assign parent_id
-        to_freeze = not_frozen[freeze_mask]
+        to_freeze = not_frozen[freeze_mask].copy()
         if not to_freeze.empty:
             # For each particle to freeze, find the nearest frozen particle
             nearest_frozen_indices = tree.query(

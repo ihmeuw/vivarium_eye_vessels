@@ -8,6 +8,7 @@ components:
         - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
+        - boundaries.MagneticRepulsion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -29,7 +30,7 @@ configuration:
     # Base particle configuration
     particles:
         step_size: 0.05
-        overall_max_velocity_change: 0.01
+        overall_max_velocity_change: 0.005
         initial_velocity_range: [-0.1, 0.1]
         initial_circle:
             center: [1.0, 0.0, 0.0]  # Center of the frozen circle
@@ -38,7 +39,7 @@ configuration:
 
     # Path freezing configuration    
     path_freezer:
-        freeze_interval: 20  # Steps between freezing positions
+        freeze_interval: 15  # Steps between freezing positions
 
     # Path splitting configuration
     path_splitter:
@@ -47,15 +48,15 @@ configuration:
         split_probability: 0.1  # Probability of eligible path splitting
 
     path_extinction:
-        extinction_start_time: '2025-02-01'
-        extinction_end_time: '2025-02-02'
+        extinction_start_time: '2025-03-01'
+        extinction_end_time: '2025-03-02'
         initial_freeze_probability: 0.0
-        final_freeze_probability: 0.15
+        final_freeze_probability: 0.25
         check_interval: 60
 
     path_dla:
         stickiness: 1.0            # Probability of sticking when near frozen particle
-        near_radius: 0.05           # Distance for checking proximity to frozen particles
+        near_radius: 0.03           # Distance for checking proximity to frozen particles
 
     frozen_repulsion:
         spring_constant: 0.1  # Spring constant for Hooke's law (force/distance)
@@ -75,6 +76,14 @@ configuration:
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
         spring_constant: 0.5  # Spring constant for Hooke's law (force/distance)
         
+    magnetic_repulsion:
+        position:
+            x: 3.0
+            y: 0.0
+            z: 0.0
+        strength: 0.025
+        min_distance: 0.1
+
     visualization:
         background_color: [0, 0, 0]
         rotation_speed: 0.01
