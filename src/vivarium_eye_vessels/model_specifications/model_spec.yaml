@@ -7,7 +7,7 @@ components:
         # - particles.FrozenParticleRepulsion()
         # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
-        # - boundaries.CylinderExclusion()
+        - boundaries.CylinderExclusion()
         # - boundaries.MagneticRepulsion()
         - visualizer.ParticleVisualizer3D()
 
@@ -25,7 +25,7 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 10
+        population_size: 1000
 
     # Base particle configuration
     particles:
@@ -77,10 +77,10 @@ configuration:
     
     cylinder_exclusion:
         radius: 0.2  # Radius of the cylinder
-        height: 2.0  # Height of the cylinder
-        center: [-.5, 0.0, -1.0]  # Center of the cylinder
+        height: 0.4  # Height of the cylinder
+        center: [-.5, 0.0, -0.2]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
-        spring_constant: 0.5  # Spring constant for Hooke's law (force/distance)
+        spring_constant: 5.0  # Spring constant for Hooke's law (force/distance)
         
     magnetic_repulsion:
         position:

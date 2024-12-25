@@ -137,10 +137,17 @@ class EllipsoidContainment(Component):
         """Add z-component of ellipsoid containment force."""
         forces += pd.Series(self.get_cached_forces(index)[:, 2], index=index)
         return forces
+
+from typing import List
+import numpy as np
+import pandas as pd
+from vivarium import Component
+from vivarium.framework.engine import Builder
+from vivarium.framework.event import Event
+
+
 class CylinderExclusion(Component):
-    """Component that repels particles from inside a cylindrical exclusion zone using Hooke's law.
-    Only considers radial distance from cylinder axis. This version uses vectorized operations and stores forces.
-    """
+    """Component that repels particles from inside a cylindrical exclusion zone using Hooke's law."""
 
     CONFIGURATION_DEFAULTS = {
         "cylinder_exclusion": {
@@ -153,7 +160,7 @@ class CylinderExclusion(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "frozen"]
+        return ["x", "y", "z", "frozen"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the component."""
@@ -171,19 +178,29 @@ class CylinderExclusion(Component):
         self.default_outward = np.cross(self.direction, random_perpendicular)
         self.default_outward /= np.linalg.norm(self.default_outward)
 
+        # Initialize force cache
+        self.force_cache = {}
+        self.clock = builder.time.clock()
+
+        # Register force modifiers for each component
+        builder.value.register_value_modifier(
+            "particle.force.x",
+            modifier=self.cylinder_force_x,
+            requires_columns=["x", "y", "z", "frozen"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.y",
+            modifier=self.cylinder_force_y,
+            requires_columns=["x", "y", "z", "frozen"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.z",
+            modifier=self.cylinder_force_z,
+            requires_columns=["x", "y", "z", "frozen"]
+        )
+
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
-        """Vectorized calculation of forces for all particles.
-
-        Parameters
-        ----------
-        positions : np.ndarray
-            Nx3 array of particle positions (x,y,z)
-
-        Returns
-        -------
-        np.ndarray
-            Nx3 array of force vectors
-        """
+        """Vectorized calculation of forces for all particles."""
         # Calculate vectors from center to each point
         rel_positions = positions - self.center
 
@@ -221,28 +238,43 @@ class CylinderExclusion(Component):
 
         return forces
 
-    def on_time_step(self, event: Event) -> None:
-        """Apply and store repulsion forces on each time step using vectorized operations."""
-        # Get current state of all unfrozen particles
-        pop = self.population_view.get(event.index, query="frozen == False")
-        if pop.empty:
-            return
+    def get_cached_forces(self, index: pd.Index) -> np.ndarray:
+        """Get cached forces or calculate them if needed."""
+        current_time = self.clock()
+        cache_key = (current_time, tuple(index))
+        
+        if cache_key not in self.force_cache:
+            pop = self.population_view.get(index)
+            active_particles = pop[~pop.frozen]
+            
+            if active_particles.empty:
+                self.force_cache[cache_key] = np.zeros((len(index), 3))
+            else:
+                positions = active_particles[["x", "y", "z"]].to_numpy()
+                forces = np.zeros((len(index), 3))
+                active_forces = self.calculate_forces_vectorized(positions)
+                forces[active_particles.index.get_indexer(active_particles.index)] = active_forces
+                self.force_cache[cache_key] = forces
+                
+            # Clear old cache entries
+            self.force_cache = {k: v for k, v in self.force_cache.items() if k[0] == current_time}
+            
+        return self.force_cache[cache_key]
 
-        # Extract positions as numpy array
-        positions = pop[["x", "y", "z"]].to_numpy()
+    def cylinder_force_x(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add x-component of cylinder repulsion force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 0], index=index)
+        return forces
 
-        # Calculate forces for all particles at once
-        forces = self.calculate_forces_vectorized(positions)
+    def cylinder_force_y(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add y-component of cylinder repulsion force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 1], index=index)
+        return forces
 
-        # Store forces in population
-        pop.loc[:, ["fx", "fy", "fz"]] += forces
-
-        # Update velocities based on forces
-        dt = event.step_size / pd.Timedelta(days=1)
-        pop[["vx", "vy", "vz"]] += forces * dt
-
-        # Update population
-        self.population_view.update(pop)
+    def cylinder_force_z(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add z-component of cylinder repulsion force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 2], index=index)
+        return forces
 
 
 class MagneticRepulsion(Component):
