@@ -25,12 +25,12 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 1
+        population_size: 10
 
     # Base particle configuration
     particles:
         step_size: 0.05
-        overall_max_velocity_change: 0.0
+        overall_max_velocity_change: 0.1
         initial_velocity_range: [-0.05, 0.05]
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
@@ -38,6 +38,7 @@ configuration:
             n_vessels: 1               # Number of frozen particles in the circle
         force_blocking_threshold: 0.25 # Threshold for considering a particle blocked
         blocked_time_threshold: 0.0    # Time threshold (in simulation days) for terminating blocked paths
+        terminal_velocity: 0.1
 
     # Path freezing configuration    
     path_freezer:

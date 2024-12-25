@@ -35,6 +35,7 @@ class Particle3D(Component):
             "initial_circle": {"center": [1.5, 0.0, 0.5], "radius": 0.1, "n_vessels": 5},
             "force_blocking_threshold": 0.5,  # Threshold for considering a particle blocked
             "blocked_time_threshold": 1.0,    # Time threshold (in simulation days) for terminating blocked paths
+            "terminal_velocity": 0.2,         # Maximum allowed velocity magnitude
         }
     }
 
@@ -45,6 +46,7 @@ class Particle3D(Component):
         self.initial_velocity_range = self.config.initial_velocity_range
         self.force_blocking_threshold = self.config.force_blocking_threshold
         self.blocked_time_threshold = self.config.blocked_time_threshold
+        self.terminal_velocity = self.config.terminal_velocity
 
         self.clock = builder.time.clock()
 
@@ -186,6 +188,16 @@ class Particle3D(Component):
             
             # Add force contribution to velocity
             particles.loc[:, v] += (dv + f) * self.step_size
+
+        # Apply terminal velocity constraint
+        velocity_vectors = particles[["vx", "vy", "vz"]].to_numpy()
+        velocities_magnitude = np.linalg.norm(velocity_vectors, axis=1)
+        over_limit = velocities_magnitude > self.terminal_velocity
+        
+        if np.any(over_limit):
+            # Scale down velocity components to satisfy terminal velocity
+            scale_factors = self.terminal_velocity / velocities_magnitude[over_limit]
+            particles.loc[over_limit, ["vx", "vy", "vz"]] *= scale_factors[:, np.newaxis]
 
         self.population_view.update(particles)
 
