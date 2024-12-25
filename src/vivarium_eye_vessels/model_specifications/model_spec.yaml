@@ -1,14 +1,14 @@
 components:
     vivarium_eye_vessels.components:
         - particles.Particle3D()
-        - particles.PathFreezer()
+        # - particles.PathFreezer()
         # - particles.PathSplitter()
-        - particles.PathExtinction()
-        - particles.FrozenParticleRepulsion()
-        - particles.PathDLA()
+        # - particles.PathExtinction()
+        # - particles.FrozenParticleRepulsion()
+        # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
-        - boundaries.CylinderExclusion()
-        - boundaries.MagneticRepulsion()
+        # - boundaries.CylinderExclusion()
+        # - boundaries.MagneticRepulsion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -25,13 +25,13 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 1_000
+        population_size: 1
 
     # Base particle configuration
     particles:
         step_size: 0.05
-        overall_max_velocity_change: 0.01
-        initial_velocity_range: [-0.1, 0.1]
+        overall_max_velocity_change: 0.0
+        initial_velocity_range: [-0.05, 0.05]
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.1                # Radius of the circle
@@ -71,8 +71,8 @@ configuration:
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.03  # Ellipsoid z semi-major axis
-        spring_constant: 0.5
+        c: 0.1  # Ellipsoid z semi-major axis
+        spring_constant: 5.0
     
     cylinder_exclusion:
         radius: 0.2  # Radius of the cylinder
@@ -91,7 +91,8 @@ configuration:
 
     visualization:
         background_color: [0, 0, 0]
-        rotation_speed: 0.01
+        particle_size: 2
+        rotation_speed: 0.02
         particle_color: [0, 120, 120]
         projection_scale: 1000.0
         fps: 60

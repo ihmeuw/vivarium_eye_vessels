@@ -9,10 +9,7 @@ from vivarium.framework.population import SimulantData
 
 
 class EllipsoidContainment(Component):
-    """Component that keeps particles within an ellipsoid boundary using Hooke's law.
-
-    This version uses vectorized operations for improved performance and stores forces.
-    """
+    """Component that keeps particles within an ellipsoid boundary using Hooke's law."""
 
     CONFIGURATION_DEFAULTS = {
         "ellipsoid_containment": {
@@ -25,10 +22,10 @@ class EllipsoidContainment(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "frozen"]
+        return ["x", "y", "z", "frozen"]
 
     def setup(self, builder: Builder) -> None:
-        """Setup the component."""
+        """Setup the component and register force modifiers."""
         self.config = builder.configuration.ellipsoid_containment
 
         # Get semi-major axes from config
@@ -42,78 +39,104 @@ class EllipsoidContainment(Component):
         self.b2 = self.b * self.b
         self.c2 = self.c * self.c
 
+        # Initialize cache
+        self.force_cache = {}
+        self.clock = builder.time.clock()
+
+        # Register force modifiers for each component
+        builder.value.register_value_modifier(
+            "particle.force.x",
+            modifier=self.ellipsoid_force_x,
+            requires_columns=["x", "y", "z", "frozen"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.y",
+            modifier=self.ellipsoid_force_y,
+            requires_columns=["x", "y", "z", "frozen"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.z",
+            modifier=self.ellipsoid_force_z,
+            requires_columns=["x", "y", "z", "frozen"]
+        )
+
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
-        """Vectorized calculation of forces for all particles.
-
-        Parameters
-        ----------
-        positions : np.ndarray
-            Nx3 array of particle positions (x,y,z)
-
-        Returns
-        -------
-        np.ndarray
-            Nx3 array of force vectors
-        """
-        # Calculate normalized radial distances
-        normalized_pos = positions * np.array([1 / self.a, 1 / self.b, 1 / self.c])
-        d = np.sqrt(np.sum(normalized_pos * normalized_pos, axis=1))
-
-        # Handle particles at origin
-        mask_origin = d < 1e-10
-        d[mask_origin] = 1e-10  # Avoid division by zero
-
-        # Calculate surface distances (positive means outside)
-        surface_distances = d - 1.0
-
-        # Calculate direction vectors (proportional to gradient)
-        directions = -positions * np.array([1 / self.a2, 1 / self.b2, 1 / self.c2])
-        directions = directions / d[:, np.newaxis]  # Normalize by radial distance
-
-        # Normalize direction vectors
-        direction_magnitudes = np.linalg.norm(directions, axis=1)
-        mask_nonzero = direction_magnitudes > 0
-        directions[mask_nonzero] = directions[mask_nonzero] / direction_magnitudes[mask_nonzero, np.newaxis]
-
-        # Only apply forces to particles outside ellipsoid
-        mask_outside = surface_distances > 0
-
-        # Calculate force magnitudes using Hooke's law
-        force_magnitudes = np.zeros_like(surface_distances)
-        force_magnitudes[mask_outside] = self.spring_constant * surface_distances[mask_outside]
-
-        # Calculate final force vectors
-        forces = directions * force_magnitudes[:, np.newaxis]
-
-        # Zero out forces for particles at origin
-        forces[mask_origin] = 0
-
+        """Calculate containment forces for all particles using vectorized operations."""
+        # Calculate normalized position coordinates
+        x_norm = positions[:, 0] / self.a
+        y_norm = positions[:, 1] / self.b
+        z_norm = positions[:, 2] / self.c
+        
+        # Calculate ellipsoid equation value at each point
+        ellipsoid_val = x_norm**2 + y_norm**2 + z_norm**2
+        
+        # Calculate gradient components (normal to the ellipsoid surface)
+        dx = 2 * x_norm / self.a
+        dy = 2 * y_norm / self.b
+        dz = 2 * z_norm / self.c
+        
+        # Stack gradient components
+        gradient = np.column_stack([dx, dy, dz])
+        
+        # Calculate force only for points outside ellipsoid (ellipsoid_val > 1)
+        outside_mask = ellipsoid_val > 1
+        
+        # Initialize forces array
+        forces = np.zeros_like(positions)
+        
+        if np.any(outside_mask):
+            # For points outside, calculate restoring force
+            gradient_outside = gradient[outside_mask]
+            
+            # Normalize the gradient vectors
+            gradient_norms = np.linalg.norm(gradient_outside, axis=1, keepdims=True)
+            normalized_gradients = gradient_outside / gradient_norms
+            
+            # Calculate force magnitude (proportional to distance from surface)
+            force_magnitudes = self.spring_constant * (np.sqrt(ellipsoid_val[outside_mask]) - 1)
+            
+            # Calculate forces (pointing inward)
+            forces[outside_mask] = -normalized_gradients * force_magnitudes[:, np.newaxis]
+        
         return forces
 
-    def on_time_step(self, event: Event) -> None:
-        """Apply and store restoring forces on each time step using vectorized operations."""
-        # Get current state of all unfrozen particles
-        pop = self.population_view.get(event.index, query="frozen == False")
-        if pop.empty:
-            return
+    def get_cached_forces(self, index: pd.Index) -> np.ndarray:
+        """Get cached forces or calculate them if needed."""
+        current_time = self.clock()
+        cache_key = (current_time, tuple(index))
+        
+        if cache_key not in self.force_cache:
+            pop = self.population_view.get(index)
+            active_particles = pop[~pop.frozen]
+            
+            if active_particles.empty:
+                self.force_cache[cache_key] = np.zeros((len(index), 3))
+            else:
+                positions = active_particles[["x", "y", "z"]].to_numpy()
+                forces = np.zeros((len(index), 3))
+                active_forces = self.calculate_forces_vectorized(positions)
+                forces[active_particles.index.get_indexer(active_particles.index)] = active_forces
+                self.force_cache[cache_key] = forces
+                
+            # Clear old cache entries
+            self.force_cache = {k: v for k, v in self.force_cache.items() if k[0] == current_time}
+            
+        return self.force_cache[cache_key]
 
-        # Extract positions as numpy array
-        positions = pop[["x", "y", "z"]].to_numpy()
+    def ellipsoid_force_x(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add x-component of ellipsoid containment force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 0], index=index)
+        return forces
 
-        # Calculate forces for all particles at once
-        forces = self.calculate_forces_vectorized(positions)
+    def ellipsoid_force_y(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add y-component of ellipsoid containment force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 1], index=index)
+        return forces
 
-        # Store forces in population
-        pop.loc[:, ["fx", "fy", "fz"]] += forces
-
-        # Update velocities based on forces
-        dt = event.step_size / pd.Timedelta(days=1)
-        pop[["vx", "vy", "vz"]] += forces * dt
-
-        # Update population
-        self.population_view.update(pop)
-
-
+    def ellipsoid_force_z(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add z-component of ellipsoid containment force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 2], index=index)
+        return forces
 class CylinderExclusion(Component):
     """Component that repels particles from inside a cylindrical exclusion zone using Hooke's law.
     Only considers radial distance from cylinder axis. This version uses vectorized operations and stores forces.

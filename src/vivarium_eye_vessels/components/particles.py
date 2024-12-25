@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 import sklearn
+from scipy.stats import norm
 
 from vivarium import Component
 from vivarium.framework.engine import Builder
@@ -18,8 +19,6 @@ class Particle3D(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "fx", "fy", "fz",  # Force components
-            "force_magnitude",  # Total force magnitude
             "blocked_time",     # Time spent in high-force state
             "frozen",
             "parent_id",
@@ -49,6 +48,9 @@ class Particle3D(Component):
 
         self.clock = builder.time.clock()
 
+        # Register force pipelines
+        self.register_force_pipelines(builder)
+
         self.max_velocity_change = builder.value.register_value_producer(
             "particle.max_velocity_change",
             source=lambda index: pd.Series(self.overall_max_velocity_change, index=index),
@@ -57,8 +59,38 @@ class Particle3D(Component):
         self.randomness = builder.randomness.get_stream("particle.particles_3d")
         self.builder = builder
 
+    def register_force_pipelines(self, builder: Builder) -> None:
+        """Register pipelines for force components and total magnitude."""
+        # Register individual force component pipelines
+        self.force_x = builder.value.register_value_producer(
+            "particle.force.x",
+            source=lambda index: pd.Series(0.0, index=index)
+        )
+        self.force_y = builder.value.register_value_producer(
+            "particle.force.y",
+            source=lambda index: pd.Series(0.0, index=index)
+        )
+        self.force_z = builder.value.register_value_producer(
+            "particle.force.z",
+            source=lambda index: pd.Series(0.0, index=index)
+        )
+
+        # Register total force magnitude pipeline
+        self.force_magnitude = builder.value.register_value_producer(
+            "particle.force.magnitude",
+            source=self.get_force_magnitude,
+            requires_values=['particle.force.x', 'particle.force.y', 'particle.force.z']
+        )
+
+    def get_force_magnitude(self, index: pd.Index) -> pd.Series:
+        """Calculate total force magnitude from components."""
+        fx = self.force_x(index)
+        fy = self.force_y(index)
+        fz = self.force_z(index)
+        return np.sqrt(fx**2 + fy**2 + fz**2)
+
     def on_initialize_simulants(self, simulant_data: SimulantData) -> None:
-        """Initialize particles with positions, velocities, forces, and path tracking information."""
+        """Initialize particles with positions, velocities, and path tracking information."""
         pop = pd.DataFrame(index=simulant_data.index)
 
         has_ellipsoid = "ellipsoid_containment" in self.builder.components.list_components()
@@ -69,32 +101,23 @@ class Particle3D(Component):
             a = float(config.a)
             b = float(config.b)
             c = float(config.c)
-
-            # Generate points uniformly in an ellipsoid using rejection sampling
-            n_particles = len(pop.index)
-            accepted_points = []
-
-            while len(accepted_points) < n_particles:
-                x = (2 * self.randomness.get_draw(pop.index, additional_key="x") - 1) * a
-                y = (2 * self.randomness.get_draw(pop.index, additional_key="y") - 1) * b
-                z = (2 * self.randomness.get_draw(pop.index, additional_key="z") - 1) * c
-
-                inside = (x**2 / a**2 + y**2 / b**2 + z**2 / c**2) <= 1
-
-                valid_points = pd.DataFrame({"x": x[inside], "y": y[inside], "z": z[inside]})
-                accepted_points.append(valid_points)
-
-                if len(pd.concat(accepted_points)) >= n_particles:
-                    break
-
-            all_points = pd.concat(accepted_points, ignore_index=True)
-            pop["x"] = all_points["x"].iloc[:n_particles]
-            pop["y"] = all_points["y"].iloc[:n_particles]
-            pop["z"] = all_points["z"].iloc[:n_particles]
+            self.scale = np.array([a,b,c])
         else:
-            pop["x"] = self.randomness.get_draw(pop.index, additional_key="x")
-            pop["y"] = self.randomness.get_draw(pop.index, additional_key="y")
-            pop["z"] = self.randomness.get_draw(pop.index, additional_key="z")
+            self.scale = np.ones(3)
+
+        # Generate 3D normal points using ppf (inverse CDF)
+        points = np.column_stack([
+            norm.ppf(self.randomness.get_draw(pop.index, additional_key=f'xyz_{i}'))
+            for i in range(3)
+        ])
+    
+        # Normalize and scale by random radius
+        points /= np.linalg.norm(points, axis=1)[:, np.newaxis]
+        radii = np.array(self.randomness.get_draw(pop.index, additional_key='radius'))**(1/3)
+        points *= radii[:, np.newaxis]
+        pop[["x", "y", "z"]] = points 
+        
+        pop[["x", "y", "z"]] *= self.scale
 
         # Generate random initial velocities
         v_range = self.initial_velocity_range
@@ -104,14 +127,10 @@ class Particle3D(Component):
                 * (v_range[1] - v_range[0])
                 + v_range[0]
             )
+        pop[["vx", "vy", "vz"]] *= self.scale
 
-        # Initialize force components and blocked time
-        for f in ["fx", "fy", "fz"]:
-            pop[f] = 0.0
-        pop["force_magnitude"] = 0.0
+        # Initialize blocked time and tracking columns
         pop["blocked_time"] = 0.0
-
-        # Initialize path tracking columns
         pop["frozen"] = False
         pop["frozen_duration"] = np.nan
         pop["parent_id"] = pd.NA
@@ -155,29 +174,28 @@ class Particle3D(Component):
         # Get max velocity change from pipeline
         max_velocity_change = self.max_velocity_change(particles.index)
 
+        # Get current forces from pipelines
+        fx = self.force_x(particles.index)
+        fy = self.force_y(particles.index)
+        fz = self.force_z(particles.index)
+
         # Update velocities with random changes and forces
-        for i, v in enumerate(["vx", "vy", "vz"]):
+        for i, (v, f) in enumerate(zip(["vx", "vy", "vz"], [fx, fy, fz])):
             # Random velocity change
-            dv = (self.randomness.get_draw(particles.index, additional_key=f"d{v}") - 0.5) * 2 * max_velocity_change
+            dv = (self.randomness.get_draw(particles.index, additional_key=f"d{v}") - 0.5) * 2 * max_velocity_change * self.scale[i]
             
             # Add force contribution to velocity
-            f = ["fx", "fy", "fz"][i]
-            particles.loc[:, v] += dv + particles[f] * self.step_size
-            
-            # Clip velocities
-            particles.loc[:, v] = np.clip(particles.loc[:, v], -0.1, 0.1)
+            particles.loc[:, v] += (dv + f) * self.step_size
 
         self.population_view.update(particles)
 
     def check_blocked_paths(self, particles: pd.DataFrame, step_size: pd.Timedelta) -> None:
         """Check for and handle blocked paths based on force magnitude."""
-        # Calculate total force magnitude
-        particles.loc[:, "force_magnitude"] = np.sqrt(
-            particles["fx"]**2 + particles["fy"]**2 + particles["fz"]**2
-        )
+        # Get force magnitude from pipeline
+        force_magnitude = self.force_magnitude(particles.index)
 
         # Update blocked time for particles experiencing high forces
-        blocked_mask = particles["force_magnitude"] > self.force_blocking_threshold
+        blocked_mask = force_magnitude > self.force_blocking_threshold
         particles.loc[blocked_mask, "blocked_time"] += step_size / pd.Timedelta(days=1)
         particles.loc[~blocked_mask, "blocked_time"] = 0
 
@@ -187,11 +205,11 @@ class Particle3D(Component):
             (particles["path_id"].notna())
         ]
         
-        if not to_freeze.empty:
-            to_freeze.loc[:, "frozen"] = True
-            to_freeze.loc[:, "path_id"] = -1
+        # if not to_freeze.empty:
+        #     to_freeze.loc[:, "frozen"] = True
+        #     to_freeze.loc[:, "path_id"] = -1
 
-            self.population_view.update(to_freeze)
+        #     self.population_view.update(to_freeze)
 
 
 class PathFreezer(Component):
