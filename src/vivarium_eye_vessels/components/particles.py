@@ -29,7 +29,6 @@ class Particle3D(Component):
 
     CONFIGURATION_DEFAULTS = {
         "particles": {
-            "step_size": 0.01,
             "overall_max_velocity_change": 0.1,
             "initial_velocity_range": (-0.05, 0.05),
             "initial_circle": {"center": [1.5, 0.0, 0.5], "radius": 0.1, "n_vessels": 5},
@@ -41,7 +40,7 @@ class Particle3D(Component):
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.particles
-        self.step_size = self.config.step_size
+        self.step_size = builder.configuration.time.step_size
         self.overall_max_velocity_change = self.config.overall_max_velocity_change
         self.initial_velocity_range = self.config.initial_velocity_range
         self.force_blocking_threshold = self.config.force_blocking_threshold
@@ -166,6 +165,13 @@ class Particle3D(Component):
         if not active_particles.empty:
             self.update_positions(active_particles)
             self.check_blocked_paths(active_particles[active_particles.path_id.notna()], event.step_size)
+            self.update_frozen_duration(pop[pop.frozen])
+
+    def update_frozen_duration(self, pop):
+        if len(pop) == 0:
+            return
+        pop.loc[:, 'frozen_duration'] += self.step_size
+        self.population_view.update(pop)
 
     def update_positions(self, particles: pd.DataFrame) -> None:
         """Update positions and velocities based on forces and random changes."""
@@ -308,7 +314,7 @@ class PathSplitter(Component):
         self.config = builder.configuration.path_splitter
         self.step_count = 0
         self.next_path_id = builder.configuration.particles.initial_circle.n_vessels+1
-        self.step_size = builder.configuration.particles.step_size
+        self.step_size = builder.configuration.time.step_size
         self.randomness = builder.randomness.get_stream("path_splitter")
 
     def on_time_step(self, event: Event) -> None:

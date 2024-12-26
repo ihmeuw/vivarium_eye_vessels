@@ -25,20 +25,19 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 2000
+        population_size: 3_000
 
     # Base particle configuration
     particles:
-        step_size: 0.05
-        overall_max_velocity_change: 0.1
-        initial_velocity_range: [-0.05, 0.05]
+        overall_max_velocity_change: 0.02
+        initial_velocity_range: [-0.02, 0.02]
+        terminal_velocity: 0.04
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.1                # Radius of the circle
             n_vessels: 6               # Number of frozen particles in the circle
-        force_blocking_threshold: 0.1 # Threshold for considering a particle blocked
+        force_blocking_threshold: 0.1  # Threshold for considering a particle blocked
         blocked_time_threshold: 0.0    # Time threshold (in simulation days) for terminating blocked paths
-        terminal_velocity: 0.1
 
     # Path freezing configuration    
     path_freezer:
@@ -46,16 +45,16 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 30     # Steps between checking for splits
+        split_interval: 200     # Steps between checking for splits
         split_angle: 30         # Angle in degrees between split paths
-        split_probability: 0.05  # Probability of eligible path splitting
+        split_probability: 0.5  # Probability of eligible path splitting
 
     path_extinction:
+        check_interval: 400
         extinction_start_time: '2025-04-01'
         extinction_end_time: '2025-05-02'
-        initial_freeze_probability: 0.05
+        initial_freeze_probability: 0.5
         final_freeze_probability: 1
-        check_interval: 30
 
     path_dla:
         dla_start_time: '2025-05-01'
@@ -66,9 +65,9 @@ configuration:
 
     frozen_repulsion:
         force_type: "spring"  # "spring" or "magnetic"
-        spring_constant: 10  # Spring constant for Hooke's law (force/distance);  acts as magnetic strength when using magnetic force
+        spring_constant: 5  # Spring constant for Hooke's law (force/distance);  acts as magnetic strength when using magnetic force
         max_distance: .2  # Maximum distance for force calculation (acts as spring rest length)
-        min_frozen_duration: 0.0  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
+        min_frozen_duration: 0.1  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
 
 
     ellipsoid_containment:
@@ -86,11 +85,11 @@ configuration:
         
     magnetic_repulsion:
         position:
-            x: 3.0
+            x: 1.0
             y: 0.0
             z: 0.0
-        strength: 0.025
-        min_distance: 0.1
+        strength: 0.001
+        min_distance: 0.05
 
     visualization:
         background_color: [0, 0, 0]
