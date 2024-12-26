@@ -219,8 +219,6 @@ class Particle3D(Component):
         ]
         
         if not to_freeze.empty:
-            print(to_freeze)
-            print(force_magnitude)
             to_freeze.loc[:, "frozen"] = True
             to_freeze.loc[:, "path_id"] = -1
 

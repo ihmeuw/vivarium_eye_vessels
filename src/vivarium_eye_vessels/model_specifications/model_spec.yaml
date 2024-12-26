@@ -8,7 +8,7 @@ components:
         - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
-        # - boundaries.MagneticRepulsion()
+        - boundaries.MagneticRepulsion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -25,7 +25,7 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 1000
+        population_size: 2000
 
     # Base particle configuration
     particles:
@@ -35,8 +35,8 @@ configuration:
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.1                # Radius of the circle
-            n_vessels: 1               # Number of frozen particles in the circle
-        force_blocking_threshold: 0.07 # Threshold for considering a particle blocked
+            n_vessels: 6               # Number of frozen particles in the circle
+        force_blocking_threshold: 0.1 # Threshold for considering a particle blocked
         blocked_time_threshold: 0.0    # Time threshold (in simulation days) for terminating blocked paths
         terminal_velocity: 0.1
 
@@ -46,28 +46,28 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 10     # Steps between checking for splits
+        split_interval: 30     # Steps between checking for splits
         split_angle: 30         # Angle in degrees between split paths
         split_probability: 0.05  # Probability of eligible path splitting
 
     path_extinction:
-        extinction_start_time: '2025-02-01'
-        extinction_end_time: '2025-02-02'
+        extinction_start_time: '2025-04-01'
+        extinction_end_time: '2025-05-02'
         initial_freeze_probability: 0.05
         final_freeze_probability: 1
         check_interval: 30
 
     path_dla:
-        dla_start_time: '2025-02-01'
-        dla_end_time: '2025-06-01'
+        dla_start_time: '2025-05-01'
+        dla_end_time: '2025-09-01'
         stickiness: 1.0                   # Probability of sticking when near frozen particle
         initial_near_radius: 0.05         # Distance for checking proximity to frozen particles
-        final_near_radius: 0.01           # Distance for checking proximity to frozen particles
+        final_near_radius: 0.02           # Distance for checking proximity to frozen particles
 
     frozen_repulsion:
-        force_type: "magnetic"  # "spring" or "magnetic"
-        spring_constant: 5  # Spring constant for Hooke's law (force/distance);  acts as magnetic strength when using magnetic force
-        max_distance: 1  # Maximum distance for force calculation (acts as spring rest length)
+        force_type: "spring"  # "spring" or "magnetic"
+        spring_constant: 10  # Spring constant for Hooke's law (force/distance);  acts as magnetic strength when using magnetic force
+        max_distance: .2  # Maximum distance for force calculation (acts as spring rest length)
         min_frozen_duration: 0.0  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
 
 
