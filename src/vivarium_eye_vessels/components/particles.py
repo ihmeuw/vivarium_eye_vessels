@@ -261,7 +261,7 @@ class PathFreezer(Component):
 
         available = pop[~pop.frozen & pop.path_id.isna()]
         if len(available) >= len(active):
-            to_freeze = available.sample(len(active))
+            to_freeze = available.iloc[:len(active)]
 
             to_freeze = to_freeze.assign(
                 x=active.x.values,
@@ -334,7 +334,7 @@ class PathSplitter(Component):
             return
 
         # Sample particles for new branches - two per split point
-        new_branches = available.sample(2 * len(to_split))
+        new_branches = available.iloc[:(2 * len(to_split))]
         angle_rad = np.radians(self.config.split_angle / 2)
 
         # Track updates for frozen originals and new branches
@@ -495,22 +495,21 @@ class PathExtinction(Component):
 
 
 class FrozenParticleRepulsion(Component):
-    """Component that creates spring-like repulsive forces between active particles and frozen particles."""
+    """Component that creates repulsive forces between active particles and frozen particles."""
 
     CONFIGURATION_DEFAULTS = {
         "frozen_repulsion": {
             "spring_constant": 0.01,
             "max_distance": 0.5,
             "min_frozen_duration": 1.0,
+            "force_type": "spring",  # Either "spring" or "magnetic"
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
         return [
-            "x", "y", "z", 
-            "vx", "vy", "vz",
-            "fx", "fy", "fz",
+            "x", "y", "z",
             "frozen", "path_id",
             "frozen_duration"
         ]
@@ -520,6 +519,31 @@ class FrozenParticleRepulsion(Component):
         self.spring_constant = float(self.config.spring_constant)
         self.max_distance = float(self.config.max_distance)
         self.min_frozen_duration = float(self.config.min_frozen_duration)
+        self.force_type = self.config.force_type
+        
+        if self.force_type not in ["spring", "magnetic"]:
+            raise ValueError("force_type must be either 'spring' or 'magnetic'")
+
+        # Initialize force cache
+        self.force_cache = {}
+        self.clock = builder.time.clock()
+
+        # Register force modifiers
+        builder.value.register_value_modifier(
+            "particle.force.x",
+            modifier=self.repulsion_force_x,
+            requires_columns=["x", "y", "z", "frozen", "path_id", "frozen_duration"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.y",
+            modifier=self.repulsion_force_y,
+            requires_columns=["x", "y", "z", "frozen", "path_id", "frozen_duration"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.z",
+            modifier=self.repulsion_force_z,
+            requires_columns=["x", "y", "z", "frozen", "path_id", "frozen_duration"]
+        )
 
     def calculate_pairwise_forces(
         self,
@@ -528,7 +552,7 @@ class FrozenParticleRepulsion(Component):
         frozen_positions: np.ndarray,
         frozen_path_ids: np.ndarray,
     ) -> np.ndarray:
-        """Calculate spring-like repulsive forces between active particles and frozen particles."""
+        """Calculate repulsive forces between active particles and frozen particles."""
         n_active = len(active_positions)
         n_frozen = len(frozen_positions)
 
@@ -547,15 +571,22 @@ class FrozenParticleRepulsion(Component):
         # Create mask for different paths
         different_paths = active_path_ids[:, np.newaxis] != frozen_path_ids[np.newaxis, :]
 
-        # Calculate spring compression
-        compression = distances - self.max_distance
-
-        # Calculate force magnitudes using Hooke's law
-        force_magnitudes = np.where(
-            (compression < 0) & different_paths,
-            -self.spring_constant * compression,
-            0.0,
-        )
+        # Calculate force magnitudes based on force type
+        if self.force_type == "spring":
+            # Spring force calculation
+            compression = distances - self.max_distance
+            force_magnitudes = np.where(
+                (compression < 0) & different_paths,
+                -self.spring_constant * compression,
+                0.0,
+            )
+        else:  # magnetic force
+            # Apply maximum distance cutoff
+            force_magnitudes = np.where(
+                (distances < self.max_distance) & different_paths,
+                self.spring_constant / (distances ** 2),  # Using spring_constant as magnetic strength
+                0.0,
+            )
 
         # Normalize displacement vectors
         with np.errstate(invalid="ignore", divide="ignore"):
@@ -568,51 +599,60 @@ class FrozenParticleRepulsion(Component):
 
         return net_forces
 
-    def on_time_step(self, event: Event) -> None:
-        """Apply and track repulsion forces on each time step."""
-        pop = self.population_view.get(event.index)
-        if pop.empty:
-            return
-
-        # Update frozen durations
-        frozen_mask = pop.frozen
-        pop.loc[frozen_mask, "frozen_duration"] += event.step_size / pd.Timedelta(days=1)
-
-        # Split into active and eligible frozen particles
-        active_mask = (~pop.frozen) & (pop.path_id.notna())
-        active = pop[active_mask]
+    def get_cached_forces(self, index: pd.Index) -> np.ndarray:
+        """Get cached forces or calculate them if needed."""
+        current_time = self.clock()
+        cache_key = (current_time, tuple(index))
         
-        eligible_frozen = pop[
-            (pop.frozen) & (pop.frozen_duration >= self.min_frozen_duration)
-        ]
+        if cache_key not in self.force_cache:
+            pop = self.population_view.get(index)
+            
+            # Split into active and eligible frozen particles
+            active_mask = (~pop.frozen) & (pop.path_id.notna())
+            active = pop[active_mask]
+            
+            eligible_frozen = pop[
+                (pop.frozen) & (pop.frozen_duration >= self.min_frozen_duration)
+            ]
+            
+            # Initialize forces array
+            forces = np.zeros((len(index), 3))
+            
+            if not active.empty and not eligible_frozen.empty:
+                # Calculate forces for active particles
+                active_positions = active[["x", "y", "z"]].to_numpy()
+                active_path_ids = active["path_id"].to_numpy()
+                frozen_positions = eligible_frozen[["x", "y", "z"]].to_numpy()
+                frozen_path_ids = eligible_frozen["path_id"].to_numpy()
+                
+                pairwise_forces = self.calculate_pairwise_forces(
+                    active_positions, active_path_ids, frozen_positions, frozen_path_ids
+                )
+                
+                # Assign forces to correct indices
+                forces[active.index.get_indexer(active.index)] = pairwise_forces
+            
+            self.force_cache[cache_key] = forces
+            
+            # Clear old cache entries
+            self.force_cache = {k: v for k, v in self.force_cache.items() if k[0] == current_time}
+            
+        return self.force_cache[cache_key]
 
-        if len(active) == 0 or len(eligible_frozen) == 0:
-            return
+    def repulsion_force_x(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add x-component of repulsion force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 0], index=index)
+        return forces
 
-        # Calculate forces
-        active_positions = active[["x", "y", "z"]].values
-        active_path_ids = active["path_id"].values
-        frozen_positions = eligible_frozen[["x", "y", "z"]].values
-        frozen_path_ids = eligible_frozen["path_id"].values
+    def repulsion_force_y(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add y-component of repulsion force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 1], index=index)
+        return forces
 
-        forces = self.calculate_pairwise_forces(
-            active_positions, active_path_ids, frozen_positions, frozen_path_ids
-        )
-
-        # Update force components and velocities
-        dt = event.step_size / pd.Timedelta(days=1)
-        
-        # Store force components
-        active.loc[:, "fx"] = forces[:, 0]
-        active.loc[:, "fy"] = forces[:, 1]
-        active.loc[:, "fz"] = forces[:, 2]
-        
-        # Update velocities based on forces
-        active.loc[:, "vx"] += forces[:, 0] * dt
-        active.loc[:, "vy"] += forces[:, 1] * dt
-        active.loc[:, "vz"] += forces[:, 2] * dt
-
-        self.population_view.update(active)
+    def repulsion_force_z(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add z-component of repulsion force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 2], index=index)
+        return forces
 
 
 class PathDLA(Component):
