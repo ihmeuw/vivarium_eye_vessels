@@ -3,12 +3,12 @@ components:
         - particles.Particle3D()
         - particles.PathFreezer()
         - particles.PathSplitter()
-        # - particles.PathExtinction()
+        - particles.PathExtinction()
         # - particles.FrozenParticleRepulsion()
         # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
-        - boundaries.CylinderExclusion()
-        # - boundaries.MagneticRepulsion()
+        # - boundaries.CylinderExclusion()
+        - boundaries.MagneticRepulsion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -48,7 +48,7 @@ configuration:
     path_splitter:
         split_interval: 10     # Steps between checking for splits
         split_angle: 30         # Angle in degrees between split paths
-        split_probability: 0.01  # Probability of eligible path splitting
+        split_probability: 0.05  # Probability of eligible path splitting
 
     path_extinction:
         extinction_start_time: '2025-03-01'

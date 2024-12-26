@@ -278,7 +278,7 @@ class CylinderExclusion(Component):
 
 
 class MagneticRepulsion(Component):
-    """Component that creates a point-based magnetic repulsion for active particles and stores forces."""
+    """Component that creates a point-based magnetic repulsion for active particles"""
 
     CONFIGURATION_DEFAULTS = {
         "magnetic_repulsion": {
@@ -294,7 +294,7 @@ class MagneticRepulsion(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "fx", "fy", "fz", "frozen", "path_id"]
+        return ["x", "y", "z", "frozen", "path_id"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the magnetic component."""
@@ -311,19 +311,29 @@ class MagneticRepulsion(Component):
         self.strength = float(self.config.strength)
         self.min_distance = float(self.config.min_distance)
 
+        # Initialize force cache
+        self.force_cache = {}
+        self.clock = builder.time.clock()
+
+        # Register force modifiers for each component
+        builder.value.register_value_modifier(
+            "particle.force.x",
+            modifier=self.magnetic_force_x,
+            requires_columns=["x", "y", "z", "frozen", "path_id"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.y",
+            modifier=self.magnetic_force_y,
+            requires_columns=["x", "y", "z", "frozen", "path_id"]
+        )
+        builder.value.register_value_modifier(
+            "particle.force.z",
+            modifier=self.magnetic_force_z,
+            requires_columns=["x", "y", "z", "frozen", "path_id"]
+        )
+
     def calculate_magnetic_forces(self, positions: np.ndarray) -> np.ndarray:
-        """Calculate magnetic forces on particles based on their positions.
-        
-        Parameters
-        ----------
-        positions : np.ndarray
-            Array of shape (n_particles, 3) containing particle positions
-            
-        Returns
-        -------
-        np.ndarray
-            Array of shape (n_particles, 3) containing force vectors
-        """
+        """Calculate magnetic forces on particles based on their positions."""
         # Calculate displacement vectors from magnetic source to particles
         displacements = self.position - positions
         
@@ -346,32 +356,47 @@ class MagneticRepulsion(Component):
         
         return forces
 
-    def on_time_step(self, event: Event) -> None:
-        """Apply and store magnetic forces on each time step."""
-        # Get current state of all particles
-        pop = self.population_view.get(event.index)
-        if pop.empty:
-            return
+    def get_cached_forces(self, index: pd.Index) -> np.ndarray:
+        """Get cached forces or calculate them if needed."""
+        current_time = self.clock()
+        cache_key = (current_time, tuple(index))
         
-        # Get active particles (not frozen and with a path)
-        active_mask = (~pop.frozen) & (pop.path_id.notna())
-        active = pop[active_mask]
-        
-        if len(active) == 0:
-            return
+        if cache_key not in self.force_cache:
+            pop = self.population_view.get(index)
             
-        # Get positions as numpy array
-        positions = active[["x", "y", "z"]].values
-        
-        # Calculate forces
-        forces = self.calculate_magnetic_forces(positions)
-        
-        # Store forces in population
-        active.loc[:, ["fx", "fy", "fz"]] += forces
-        
-        # Update velocities based on forces
-        dt = event.step_size / pd.Timedelta(days=1)
-        active.loc[:, ["vx", "vy", "vz"]] += forces * dt
-        
-        # Update population
-        self.population_view.update(active)
+            # Get active particles (not frozen and with a path)
+            active_mask = (~pop.frozen) & (pop.path_id.notna())
+            active = pop[active_mask]
+            
+            # Initialize forces array
+            forces = np.zeros((len(index), 3))
+            
+            if not active.empty:
+                # Calculate forces for active particles
+                positions = active[["x", "y", "z"]].to_numpy()
+                active_forces = self.calculate_magnetic_forces(positions)
+                
+                # Assign forces to correct indices
+                forces[active.index.get_indexer(active.index)] = active_forces
+            
+            self.force_cache[cache_key] = forces
+            
+            # Clear old cache entries
+            self.force_cache = {k: v for k, v in self.force_cache.items() if k[0] == current_time}
+            
+        return self.force_cache[cache_key]
+
+    def magnetic_force_x(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add x-component of magnetic force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 0], index=index)
+        return forces
+
+    def magnetic_force_y(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add y-component of magnetic force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 1], index=index)
+        return forces
+
+    def magnetic_force_z(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add z-component of magnetic force."""
+        forces += pd.Series(self.get_cached_forces(index)[:, 2], index=index)
+        return forces
