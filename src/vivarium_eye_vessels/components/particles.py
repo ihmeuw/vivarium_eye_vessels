@@ -165,7 +165,7 @@ class Particle3D(Component):
 
         if not active_particles.empty:
             self.update_positions(active_particles)
-            self.check_blocked_paths(active_particles, event.step_size)
+            self.check_blocked_paths(active_particles[active_particles.path_id.notna()], event.step_size)
 
     def update_positions(self, particles: pd.DataFrame) -> None:
         """Update positions and velocities based on forces and random changes."""
@@ -205,6 +205,7 @@ class Particle3D(Component):
         """Check for and handle blocked paths based on force magnitude."""
         # Get force magnitude from pipeline
         force_magnitude = self.force_magnitude(particles.index)
+        # import pdb; pdb.set_trace()
 
         # Update blocked time for particles experiencing high forces
         blocked_mask = force_magnitude > self.force_blocking_threshold
@@ -217,11 +218,13 @@ class Particle3D(Component):
             (particles["path_id"].notna())
         ]
         
-        # if not to_freeze.empty:
-        #     to_freeze.loc[:, "frozen"] = True
-        #     to_freeze.loc[:, "path_id"] = -1
+        if not to_freeze.empty:
+            print(to_freeze)
+            print(force_magnitude)
+            to_freeze.loc[:, "frozen"] = True
+            to_freeze.loc[:, "path_id"] = -1
 
-        #     self.population_view.update(to_freeze)
+            self.population_view.update(to_freeze)
 
 
 class PathFreezer(Component):
@@ -676,7 +679,6 @@ class PathDLA(Component):
     def columns_required(self) -> List[str]:
         return [
             "x", "y", "z",
-            "fx", "fy", "fz",
             "frozen", "path_id",
             "parent_id",
         ]
@@ -764,7 +766,4 @@ class PathDLA(Component):
             to_freeze["path_id"] = to_freeze["path_id"].astype(object)
             to_freeze["frozen"] = True
             
-            # Reset forces for newly frozen particles
-            to_freeze[["fx", "fy", "fz"]] = 0.0
-
             self.population_view.update(to_freeze)
