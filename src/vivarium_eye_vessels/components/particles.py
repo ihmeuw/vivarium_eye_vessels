@@ -190,7 +190,7 @@ class Particle3D(Component):
             particles.loc[:, v] += (dv + f) * self.step_size
 
         # Apply terminal velocity constraint
-        velocity_vectors = particles[["vx", "vy", "vz"]].to_numpy()
+        velocity_vectors = particles[["vx", "vy", "vz"]].to_numpy() / self.scale
         velocities_magnitude = np.linalg.norm(velocity_vectors, axis=1)
         over_limit = velocities_magnitude > self.terminal_velocity
         
@@ -238,7 +238,6 @@ class PathFreezer(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "fx", "fy", "fz",
             "frozen", "frozen_duration",
             "parent_id", "path_id",
             "creation_time"
@@ -271,9 +270,6 @@ class PathFreezer(Component):
                 vx=active.vx.values,
                 vy=active.vy.values,
                 vz=active.vz.values,
-                fx=active.fx.values,  # Copy force components
-                fy=active.fy.values,
-                fz=active.fz.values,
                 path_id=active.path_id.values,
                 parent_id=active.index.values,
                 frozen=False,
@@ -303,7 +299,6 @@ class PathSplitter(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "fx", "fy", "fz",
             "frozen", "parent_id",
             "path_id", "creation_time"
         ]
@@ -311,7 +306,8 @@ class PathSplitter(Component):
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_splitter
         self.step_count = 0
-        self.next_path_id = 1000
+        self.next_path_id = builder.configuration.particles.initial_circle.n_vessels+1
+        self.step_size = builder.configuration.particles.step_size
         self.randomness = builder.randomness.get_stream("path_splitter")
 
     def on_time_step(self, event: Event) -> None:
@@ -328,8 +324,7 @@ class PathSplitter(Component):
             return
 
         # Determine which paths will split
-        split_mask = self.randomness.get_draw(active.index) < self.config.split_probability
-        to_split = active[split_mask]
+        to_split = self.randomness.filter_for_probability(active.index, self.config.split_probability)
         if to_split.empty:
             return
 
@@ -342,13 +337,11 @@ class PathSplitter(Component):
         new_branches = available.sample(2 * len(to_split))
         angle_rad = np.radians(self.config.split_angle / 2)
 
-        # Small offset distance for initial positions
-        offset_distance = 0.05  # Adjust as needed
-
         # Track updates for frozen originals and new branches
         updates = []
 
-        for idx, (orig_idx, original) in enumerate(to_split.iterrows()):
+        for idx, orig_idx in enumerate(to_split):
+            original = active.loc[orig_idx]
             vel = np.array([original.vx, original.vy, original.vz])
             speed = np.linalg.norm(vel)
             if speed == 0:
@@ -373,8 +366,8 @@ class PathSplitter(Component):
 
             # Calculate offset positions
             original_pos = np.array([original.x, original.y, original.z])
-            pos_1 = original_pos + offset_distance * new_vel_1_norm
-            pos_2 = original_pos + offset_distance * new_vel_2_norm
+            pos_1 = original_pos
+            pos_2 = original_pos
 
             # Create DataFrame rows with correct dtypes from the start
             # Freeze original particle at split point
@@ -382,9 +375,8 @@ class PathSplitter(Component):
                 {
                     'x': [original.x], 'y': [original.y], 'z': [original.z],
                     'vx': [original.vx], 'vy': [original.vy], 'vz': [original.vz],
-                    'fx': [0.0], 'fy': [0.0], 'fz': [0.0],
                     'frozen': [True],
-                    'path_id': [-1],
+                    'path_id': [original.path_id],
                     'parent_id': [original.parent_id],
                 }, index=[orig_idx]
             )
@@ -395,7 +387,6 @@ class PathSplitter(Component):
                 {
                     'x': [pos_1[0]], 'y': [pos_1[1]], 'z': [pos_1[2]],
                     'vx': [new_vel_1[0]], 'vy': [new_vel_1[1]], 'vz': [new_vel_1[2]],
-                    'fx': [0.0], 'fy': [0.0], 'fz': [0.0],
                     'frozen': [False],
                     'path_id': [self.next_path_id],
                     'parent_id': [orig_idx],
@@ -408,7 +399,6 @@ class PathSplitter(Component):
                 {
                     'x': [pos_2[0]], 'y': [pos_2[1]], 'z': [pos_2[2]],
                     'vx': [new_vel_2[0]], 'vy': [new_vel_2[1]], 'vz': [new_vel_2[2]],
-                    'fx': [0.0], 'fy': [0.0], 'fz': [0.0],
                     'frozen': [False],
                     'path_id': [self.next_path_id + 1],
                     'parent_id': [orig_idx],
