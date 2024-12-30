@@ -36,7 +36,7 @@ class ParticleVisualizer3D(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "frozen", "parent_id", "path_id"]
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id"]
 
     def setup(self, builder: Builder):
         pygame.init()
@@ -83,6 +83,10 @@ class ParticleVisualizer3D(Component):
 
         self.particle_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.connection_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+
+        self.force_x = builder.value.get_value('particle.force.x')
+        self.force_y = builder.value.get_value('particle.force.y')
+        self.force_z = builder.value.get_value('particle.force.z')
 
     def on_simulation_end(self, event: Event) -> None:
             """Keep the visualization window open until user exits.
@@ -434,6 +438,8 @@ class ParticleVisualizer3D(Component):
         self.screen.blit(self.connection_surface, (0, 0))
         self.screen.blit(self.particle_surface, (0, 0))
 
+        self._draw_vectors(population, screen_points, mask, rotation_matrix)
+
         if self.has_ellipsoid:
             self._draw_ellipsoid(rotation_matrix)
         if self.has_cylinder:
@@ -597,6 +603,93 @@ class ParticleVisualizer3D(Component):
                                self.config["base_path_width"])
 
         return path_widths.astype(int)
+
+    def _draw_vectors(self, population: pd.DataFrame, screen_points: np.ndarray, mask: np.ndarray, rotation_matrix: np.ndarray) -> None:
+        """Draw force and velocity vectors for active non-frozen particles."""
+        # Get only active non-frozen particles
+        active_mask = (population['path_id'].notna()) & (~population['frozen'])
+        active_particles = population[active_mask]
+        
+        if active_particles.empty:
+            return
+            
+        # Get force components for active particles
+        force_x = self.force_x(active_particles.index)
+        force_y = self.force_y(active_particles.index)
+        force_z = self.force_z(active_particles.index)
+        
+        # Get velocity components directly from population
+        velocities = active_particles[['vx', 'vy', 'vz']].values
+        forces = np.column_stack([force_x, force_y, force_z])
+
+        # Calculate magnitudes
+        force_magnitudes = np.linalg.norm(forces, axis=1)
+        velocity_magnitudes = np.linalg.norm(velocities, axis=1)
+        
+        # Normalize vectors by their max magnitudes and apply scaling
+        scaled_forces = 10*forces #* (force_scale / max_force_mag) if max_force_mag > 0 else forces
+        scaled_velocities = 5*velocities #* (vel_scale / max_vel_mag) if max_vel_mag > 0 else velocities
+        
+        # Get start points for vectors (current particle positions)
+        start_points = screen_points[active_mask]
+        start_mask = mask[active_mask]
+        
+        # Calculate end points for both force and velocity vectors
+        force_end_points_3d = active_particles[['x', 'y', 'z']].values + scaled_forces
+        velocity_end_points_3d = active_particles[['x', 'y', 'z']].values + scaled_velocities
+        
+        force_end_points, force_end_mask = self._project_points(force_end_points_3d, rotation_matrix)
+        velocity_end_points, velocity_end_mask = self._project_points(velocity_end_points_3d, rotation_matrix)
+        
+        # Draw vectors
+        def draw_arrow(start, end, color, width=2):
+            """Helper to draw an arrow with proportional head size"""
+            if not (np.all(np.isfinite(start)) and np.all(np.isfinite(end))):
+                return
+                
+            # Draw main line
+            pygame.draw.line(self.screen, color, start, end, width)
+            
+            # Calculate arrowhead size proportional to vector length
+            dx = end[0] - start[0]
+            dy = end[1] - start[1]
+            vector_length = np.sqrt(dx*dx + dy*dy)
+            
+            if vector_length < 1:  # Skip arrowhead if vector too small
+                return
+                
+            arrow_size = min(vector_length * 0.2, 10)  # 20% of vector length, max 10 pixels
+            angle = np.arctan2(dy, dx)
+            
+            # Calculate arrowhead points
+            arrow_p1 = (
+                int(end[0] - arrow_size * np.cos(angle - np.pi/6)),
+                int(end[1] - arrow_size * np.sin(angle - np.pi/6))
+            )
+            arrow_p2 = (
+                int(end[0] - arrow_size * np.cos(angle + np.pi/6)),
+                int(end[1] - arrow_size * np.sin(angle + np.pi/6))
+            )
+            
+            # Draw arrowhead
+            pygame.draw.line(self.screen, color, end, arrow_p1, width)
+            pygame.draw.line(self.screen, color, end, arrow_p2, width)
+        
+        # Draw all vectors
+        force_color = self.config.get('force_color', (255, 255, 0))  # Yellow for forces
+        velocity_color = self.config.get('velocity_color', (0, 255, 255))  # Cyan for velocities
+        
+        visible_mask = start_mask & force_end_mask & velocity_end_mask
+        
+        for i in range(len(start_points)):
+            if visible_mask[i]:
+                # Draw force vector (if significant)
+                if force_magnitudes[i] > 1e-6:
+                    draw_arrow(start_points[i], force_end_points[i], force_color)
+                
+                # Draw velocity vector (if significant)
+                if velocity_magnitudes[i] > 1e-6:
+                    draw_arrow(start_points[i], velocity_end_points[i], velocity_color)
 
     def _draw_connections(
         self,
