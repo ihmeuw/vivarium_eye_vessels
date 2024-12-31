@@ -19,7 +19,7 @@ class Particle3D(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "frozen",
+            "frozen", "freeze_time",
             "depth",
             "parent_id",
             "path_id",
@@ -125,6 +125,7 @@ class Particle3D(Component):
 
         # Initialize tree-structure-related columns
         pop["frozen"] = False
+        pop["freeze_time"] = pd.NaT
         pop["depth"] = -1
         pop["parent_id"] = -1
         pop["path_id"] = -1
@@ -209,13 +210,14 @@ class PathFreezer(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "frozen", "depth",
+            "frozen", "freeze_time", "depth",
             "parent_id", "path_id",
         ]
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_freezer
         self.step_count = 0
+        self.clock = builder.time.clock()
 
         self._current_tree = None
         self._current_frozen = None
@@ -257,11 +259,10 @@ class PathFreezer(Component):
         nearest_frozen_indices = [self._current_frozen.index[indices[0]] for indices in near_list]
         return nearest_frozen_indices
 
-    def positions(self, indices: List[int]) -> np.ndarray:
-        """Get positions of frozen particles by index."""
+    def get_population(self, indices: List[int]) -> pd.DataFrame:
         pos = self._current_frozen.reindex(indices)
-        pos = pos[["x", "y", "z"]].dropna(how='all')
-        return pos.values
+        pos = pos.dropna(how='all')
+        return pos
 
     def freeze_particles(self, pop: pd.DataFrame) -> None:
         """Create frozen path points and continue paths with new particles."""
@@ -289,6 +290,7 @@ class PathFreezer(Component):
             self.population_view.update(to_freeze)
 
         active.loc[:, "frozen"] = True
+        active.loc[:, "freeze_time"] = self.clock()
         self.population_view.update(active)
 
 
@@ -307,7 +309,7 @@ class PathExtinction(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["frozen", "path_id"]
+        return ["frozen", "freeze_time", "path_id"]
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_extinction
@@ -349,6 +351,7 @@ class PathExtinction(Component):
 
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
+            to_freeze.loc[:, "freeze_time"] = self.clock()
             to_freeze.loc[:, "path_id"] = -1  # Mark as end of path, which will be used by PathDLA Component
             self.population_view.update(to_freeze)
 
@@ -370,7 +373,7 @@ class PathSplitter(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "frozen", "depth",
+            "frozen", "freeze_time", "depth",
             "parent_id", "path_id",
         ]
 
@@ -380,6 +383,7 @@ class PathSplitter(Component):
         self.next_path_id = builder.configuration.particles.initial_circle.n_vessels+1
         self.step_size = builder.configuration.time.step_size
         self.randomness = builder.randomness.get_stream("path_splitter")
+        self.clock = builder.time.clock()
 
     def on_time_step(self, event: Event) -> None:
         self.step_count += 1
@@ -447,6 +451,7 @@ class PathSplitter(Component):
                     'x': [original.x], 'y': [original.y], 'z': [original.z],
                     'vx': [original.vx], 'vy': [original.vy], 'vz': [original.vz],
                     'frozen': [True],
+                    'freeze_time': [self.clock()],
                     'depth': [original.depth],
                     'path_id': [original.path_id],
                     'parent_id': [original.parent_id],
@@ -460,6 +465,7 @@ class PathSplitter(Component):
                     'x': [pos_1[0]], 'y': [pos_1[1]], 'z': [pos_1[2]],
                     'vx': [new_vel_1[0]], 'vy': [new_vel_1[1]], 'vz': [new_vel_1[2]],
                     'frozen': [False],
+                    'freeze_time': [pd.NaT],
                     'depth': [original.depth + 1],
                     'path_id': [self.next_path_id],
                     'parent_id': [orig_idx],
@@ -473,6 +479,7 @@ class PathSplitter(Component):
                     'x': [pos_2[0]], 'y': [pos_2[1]], 'z': [pos_2[2]],
                     'vx': [new_vel_2[0]], 'vy': [new_vel_2[1]], 'vz': [new_vel_2[2]],
                     'frozen': [False],
+                    'freeze_time': [pd.NaT],
                     'depth': [original.depth + 1],
                     'path_id': [self.next_path_id + 1],
                     'parent_id': [orig_idx],
@@ -524,7 +531,7 @@ class PathDLA(Component):
     def columns_required(self) -> List[str]:
         return [
             "x", "y", "z",
-            "frozen", "depth",
+            "frozen", "freeze_time", "depth",
             "path_id", "parent_id",
         ]
 
@@ -606,5 +613,6 @@ class PathDLA(Component):
             to_freeze["path_id"] = -1
             to_freeze["depth"] = 1000
             to_freeze["frozen"] = True
+            to_freeze["freeze_time"] = self.clock()
             
             self.population_view.update(to_freeze)

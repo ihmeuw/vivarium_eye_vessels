@@ -13,7 +13,7 @@ components:
 
 configuration:
     randomness:
-        random_seed: 42
+        random_seed: 12345
     time:
         start:
             year: 2025
@@ -31,7 +31,7 @@ configuration:
     particles:
         overall_max_velocity_change: 0.02
         initial_velocity_range: [-0.02, 0.02]
-        terminal_velocity: 0.04
+        terminal_velocity: 0.05
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.2                # Radius of the circle
@@ -64,7 +64,7 @@ configuration:
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.1  # Ellipsoid z semi-major axis
+        c: 0.025  # Ellipsoid z semi-major axis
         force_type: hookean
         spring_constant: 1
     
@@ -88,7 +88,7 @@ configuration:
     frozen_repulsion:
         force_type: hookean
         spring_constant: 1.0  # Spring constant for Hooke's law (force/distance)
-        radius: 0.05  # Interaction radius
+        radius: 0.1  # Interaction radius
 
     visualization:
         background_color: [0, 0, 0]

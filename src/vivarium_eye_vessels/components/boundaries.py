@@ -74,9 +74,8 @@ class BaseForceComponent(Component):
             if active_particles.empty:
                 self.force_cache[cache_key] = np.zeros((len(index), 3))
             else:
-                positions = active_particles[["x", "y", "z"]].to_numpy()
                 forces = np.zeros((len(index), 3))
-                active_forces = self.calculate_forces_vectorized(positions)
+                active_forces = self.calculate_forces_vectorized(active_particles)
                 forces[active_particles.index.get_indexer(active_particles.index)] = active_forces
                 self.force_cache[cache_key] = forces
                 
@@ -125,7 +124,9 @@ class EllipsoidContainment(BaseForceComponent):
         self.b2 = self.b * self.b
         self.c2 = self.c * self.c
             
-    def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
+    def calculate_forces_vectorized(self, particles: pd.DataFrame) -> np.ndarray:
+        positions = particles[["x", "y", "z"]].to_numpy()
+
         # Calculate normalized coordinates
         x_norm = positions[:, 0] / self.a
         y_norm = positions[:, 1] / self.b
@@ -194,7 +195,9 @@ class CylinderExclusion(BaseForceComponent):
         self.default_outward /= np.linalg.norm(self.default_outward)
         
             
-    def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
+    def calculate_forces_vectorized(self, particles: pd.DataFrame) -> np.ndarray:
+        positions = particles[["x", "y", "z"]].to_numpy()
+
         # Calculate relative positions and components
         rel_positions = positions - self.center
         axial_dots = np.dot(rel_positions, self.direction)
@@ -257,7 +260,9 @@ class PointRepulsion(BaseForceComponent):
         ])
         self.radius = float(config.radius)
         
-    def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
+    def calculate_forces_vectorized(self, particles: pd.DataFrame) -> np.ndarray:
+        positions = particles[["x", "y", "z"]].to_numpy()
+
         # Calculate displacements and distances
         displacements = self.position - positions
         distances = np.sqrt(np.sum(displacements**2, axis=1))
@@ -289,7 +294,7 @@ class FrozenRepulsion(BaseForceComponent):
 
     @property
     def columns_required(self) -> List[str]:
-        return super().columns_required + ["path_id"]
+        return super().columns_required + ["path_id", "parent_id"]
 
     @property
     def filter_str(self) -> str:
@@ -303,8 +308,10 @@ class FrozenRepulsion(BaseForceComponent):
         self.radius = float(config.radius)
         self.freezer = builder.components.get_component("path_freezer")
 
-    def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
+    def calculate_forces_vectorized(self, particles: pd.DataFrame) -> np.ndarray:
         """Calculate repulsion forces from frozen particles"""
+        positions = particles[["x", "y", "z"]].to_numpy()
+
         forces = np.zeros_like(positions)
         neighbor_lists = self.freezer.query_radius(positions, self.radius)
         
@@ -313,7 +320,9 @@ class FrozenRepulsion(BaseForceComponent):
             
         for i, frozen_neighbors in enumerate(neighbor_lists):
             # Calculate displacement vectors from frozen particles
-            frozen_neighbor_positions = self.freezer.positions(frozen_neighbors)
+            frozen = self.freezer.get_population(frozen_neighbors)
+            frozen = frozen[frozen.path_id != frozen.path_id.get(particles.parent_id.get(i))]
+            frozen_neighbor_positions = frozen[["x", "y", "z"]].to_numpy()
             displacements = positions[i] - frozen_neighbor_positions
             
             # Calculate distances
