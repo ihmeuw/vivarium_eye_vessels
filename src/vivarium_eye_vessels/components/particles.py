@@ -466,7 +466,7 @@ class SpatialIndex(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "frozen"]
+        return ["x", "y", "z", "path_id", "frozen"]
 
     def setup(self, builder: Builder) -> None:
         self._current_tree = None
@@ -475,7 +475,7 @@ class SpatialIndex(Component):
     def on_time_step(self, event: Event) -> None:
         """Rebuild the cKDTree with current positions"""
         pop = self.population_view.get(event.index)
-        pop = pop[pop.frozen]
+        pop = pop[pop.frozen & pop.path_id.notna()]
         self._current_positions = pop[["x", "y", "z"]].values
         if len(pop) < 2:
             self._current_tree = None

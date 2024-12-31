@@ -27,7 +27,7 @@ class EllipsoidContainment(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "frozen"]
+        return ["x", "y", "z", "path_id", "frozen"]
 
     def setup(self, builder: Builder) -> None:
         """Setup the component and register force modifiers."""
