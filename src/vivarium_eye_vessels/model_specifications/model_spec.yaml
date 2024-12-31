@@ -2,9 +2,9 @@ components:
     vivarium_eye_vessels.components:
         - particles.Particle3D()
         - particles.PathFreezer()
-        # - particles.PathSplitter()
         - particles.PathExtinction()
-        # - particles.PathDLA()
+        - particles.PathSplitter()
+        - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
         - boundaries.PointRepulsion()

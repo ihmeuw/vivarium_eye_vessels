@@ -245,7 +245,9 @@ class PathFreezer(Component):
             return None
 
         return self._current_tree.query_ball_point(pop[["x", "y", "z"]].values, radius)
-
+    def nearest_index(self, near_list):
+        nearest_frozen_indices = [self._current_frozen.index[indices[0]] for indices in near_list]
+        return nearest_frozen_indices
 
     def freeze_particles(self, pop: pd.DataFrame) -> None:
         """Create frozen path points and continue paths with new particles."""
@@ -323,7 +325,7 @@ class PathExtinction(Component):
             return
 
         pop = self.population_view.get(event.index)
-        active = pop[~pop.frozen & pop.path_id.notna()]
+        active = pop[~pop.frozen & (pop.path_id >= 0)]
 
         if active.empty:
             return
@@ -333,7 +335,7 @@ class PathExtinction(Component):
 
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
-            to_freeze.loc[:, "path_id"] = -1
+            to_freeze.loc[:, "path_id"] = -1  # Mark as end of path, which will be used by PathDLA Component
             self.population_view.update(to_freeze)
 
 
@@ -354,8 +356,8 @@ class PathSplitter(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "frozen", "parent_id",
-            "path_id",
+            "frozen", "depth",
+            "parent_id", "path_id",
         ]
 
     def setup(self, builder: Builder) -> None:
@@ -374,7 +376,7 @@ class PathSplitter(Component):
     def split_paths(self, pop: pd.DataFrame) -> None:
         """Split eligible paths into two branches, freezing the original particle."""
         # Get active particles that have valid path_ids
-        active = pop[~pop.frozen & pop.path_id.notna()]
+        active = pop[~pop.frozen & (pop.path_id >= 0)]
         if active.empty:
             return
 
@@ -384,7 +386,7 @@ class PathSplitter(Component):
             return
 
         # Find available particles for new branches - need two per split
-        available = pop[~pop.frozen & pop.path_id.isna()]
+        available = pop[~pop.frozen & (pop.path_id < 0)]
         if len(available) < 2 * len(to_split):
             return
 
@@ -431,6 +433,7 @@ class PathSplitter(Component):
                     'x': [original.x], 'y': [original.y], 'z': [original.z],
                     'vx': [original.vx], 'vy': [original.vy], 'vz': [original.vz],
                     'frozen': [True],
+                    'depth': [original.depth],
                     'path_id': [original.path_id],
                     'parent_id': [original.parent_id],
                 }, index=[orig_idx]
@@ -443,6 +446,7 @@ class PathSplitter(Component):
                     'x': [pos_1[0]], 'y': [pos_1[1]], 'z': [pos_1[2]],
                     'vx': [new_vel_1[0]], 'vy': [new_vel_1[1]], 'vz': [new_vel_1[2]],
                     'frozen': [False],
+                    'depth': [original.depth + 1],
                     'path_id': [self.next_path_id],
                     'parent_id': [orig_idx],
                 }, index=[new_branches.iloc[2*idx].name]
@@ -455,6 +459,7 @@ class PathSplitter(Component):
                     'x': [pos_2[0]], 'y': [pos_2[1]], 'z': [pos_2[2]],
                     'vx': [new_vel_2[0]], 'vy': [new_vel_2[1]], 'vz': [new_vel_2[2]],
                     'frozen': [False],
+                    'depth': [original.depth + 1],
                     'path_id': [self.next_path_id + 1],
                     'parent_id': [orig_idx],
                 }, index=[new_branches.iloc[2*idx + 1].name]
@@ -466,11 +471,7 @@ class PathSplitter(Component):
         if updates:
             # Combine all updates with consistent dtypes
             all_updates = pd.concat(updates, axis=0)
-            
-            # Ensure object dtypes for id columns
-            all_updates['path_id'] = all_updates['path_id'].astype(object)
-            all_updates['parent_id'] = all_updates['parent_id'].astype(object)
-            
+                        
             self.population_view.update(all_updates)
 
     @staticmethod
@@ -579,7 +580,8 @@ class PathDLA(Component):
         self.config = builder.configuration.path_dla
         self.randomness = builder.randomness.get_stream("path_dla")
         self.clock = builder.time.clock()
-        
+        self.freezer = builder.components.get_component("path_freezer")
+
         # Convert times to pandas Timestamps
         self.dla_start_time = pd.Timestamp(self.config.dla_start_time)
         self.dla_end_time = pd.Timestamp(self.config.dla_end_time)
@@ -629,13 +631,12 @@ class PathDLA(Component):
         if frozen.empty:
             return
 
-        not_frozen = pop[~pop.frozen & pop.path_id.isna()]
+        not_frozen = pop[~pop.frozen & (pop.path_id < 0)]
         if not_frozen.empty:
             return
 
-        tree = sklearn.neighbors.KDTree(frozen[["x", "y", "z"]].values, leaf_size=2)
-        near_frozen_indices = tree.query_radius(
-            not_frozen[["x", "y", "z"]].values, r=self.near_radius
+        near_frozen_indices = self.freezer.query_radius(
+            not_frozen, self.near_radius
         )
         
         near_particles = np.array([len(indices) > 0 for indices in near_frozen_indices])
@@ -648,13 +649,10 @@ class PathDLA(Component):
 
         to_freeze = not_frozen[freeze_mask].copy()
         if not to_freeze.empty:
-            nearest_frozen_indices = tree.query(
-                to_freeze[["x", "y", "z"]].values, k=1, return_distance=False
-            )
+            nearest_frozen_indices = self.freezer.nearest_index(near_frozen_indices[freeze_mask])
             
-            to_freeze["parent_id"] = frozen.index[nearest_frozen_indices.flatten()].astype(object)
+            to_freeze["parent_id"] = frozen.index[nearest_frozen_indices.flatten()]
             to_freeze["path_id"] = -1
-            to_freeze["path_id"] = to_freeze["path_id"].astype(object)
             to_freeze["frozen"] = True
             
             self.population_view.update(to_freeze)
