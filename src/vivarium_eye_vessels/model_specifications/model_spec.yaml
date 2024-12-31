@@ -8,6 +8,7 @@ components:
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
         - boundaries.PointRepulsion()
+        - boundaries.FrozenRepulsion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -86,6 +87,11 @@ configuration:
             z: 0.0
         force_type: hookean
         spring_constant: 1  # Spring constant for Hooke's law (force/distance)
+
+    frozen_repulsion:
+        force_type: hookean
+        spring_constant: 1.0  # Spring constant for Hooke's law (force/distance)
+        radius: 0.2  # Interaction radius
 
     visualization:
         background_color: [0, 0, 0]

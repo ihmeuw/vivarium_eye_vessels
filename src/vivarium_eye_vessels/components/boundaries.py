@@ -268,3 +268,83 @@ class PointRepulsion(BaseForceComponent):
         
         # Return repulsive forces
         return -direction_vectors * force_magnitudes[:, np.newaxis]
+
+class FrozenRepulsion(BaseForceComponent):
+    """Component that repels active particles from frozen particles using spatial indexing"""
+    
+    CONFIGURATION_DEFAULTS = {
+        "frozen_repulsion": {
+            "radius": 0.05,  # Interaction radius
+            "force_type": "magnetic",  # or "hookean"
+            "magnetic_strength": 0.1,
+            "min_distance": 0.01,
+            "spring_constant": 0.1,
+        }
+    }
+
+    @property
+    def columns_required(self) -> List[str]:
+        return super().columns_required + ["path_id"]
+
+    def setup(self, builder: Builder) -> None:
+        super().setup(builder)
+        config = builder.configuration.frozen_repulsion
+        self.setup_force_calculator(config)
+
+        self.radius = float(config.radius)
+        
+        self.freezer = builder.components.get_component("path_freezer")
+
+    def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
+        """Calculate repulsion forces from frozen particles"""
+        forces = np.zeros_like(positions)
+        neighbor_lists = self.freezer.query_radius(positions, self.radius)
+        
+        if neighbor_lists is None:
+            return forces
+            
+        for i, frozen_neighbors in enumerate(neighbor_lists):
+            # Calculate displacement vectors from frozen particles
+            frozen_neighbor_positions = self.freezer.positions(frozen_neighbors)
+            displacements = positions[i] - frozen_neighbor_positions
+            
+            # Calculate distances
+            distances = np.sqrt(np.sum(displacements**2, axis=1))
+            
+            
+            # Calculate normalized direction vectors
+            with np.errstate(invalid='ignore', divide='ignore'):
+                directions = displacements / distances[:, np.newaxis]
+            directions = np.nan_to_num(directions)
+            
+            # Calculate and sum forces from all frozen neighbors
+            force_magnitudes = self.force_calculator.calculate_force_magnitude(
+                distances
+            )
+            forces[i] = np.sum(
+                directions * force_magnitudes[:, np.newaxis], axis=0
+            )
+        
+        return forces
+        
+    def get_cached_forces(self, index: pd.Index) -> np.ndarray:
+        """Override to consider path_id in active particle selection"""
+        current_time = self.clock()
+        cache_key = (current_time, tuple(index))
+        
+        if cache_key not in self.force_cache:
+            pop = self.population_view.get(index)
+            active_mask = (~pop.frozen) & (pop.path_id >= 0)
+            active = pop[active_mask]
+            
+            forces = np.zeros((len(index), 3))
+            if not active.empty:
+                positions = active[["x", "y", "z"]].to_numpy()
+                active_forces = self.calculate_forces_vectorized(positions)
+                forces[active.index.get_indexer(active.index)] = active_forces
+                
+            self.force_cache[cache_key] = forces
+            self.force_cache = {k: v for k, v in self.force_cache.items() 
+                              if k[0] == current_time}
+            
+        return self.force_cache[cache_key]

@@ -225,12 +225,14 @@ class PathFreezer(Component):
         if self.step_count % self.config.freeze_interval == 0:
             pop = self.population_view.get(event.index)
             self.freeze_particles(pop)
+            self.update_tree(pop)
 
-            self._current_frozen = pop[pop.frozen]
-            if len(self._current_frozen) < 2:
-                self._current_tree = None
-            else:
-                self._current_tree = cKDTree(self._current_frozen[["x", "y", "z"]].values)
+    def update_tree(self, pop):
+        self._current_frozen = pop[pop.frozen]
+        if len(self._current_frozen) < 2:
+            self._current_tree = None
+        else:
+            self._current_tree = cKDTree(self._current_frozen[["x", "y", "z"]].values)
 
     def get_neighbor_pairs(self, radius: float):
         """Get all pairs of frozen particles within radius using efficient pair query."""
@@ -244,10 +246,22 @@ class PathFreezer(Component):
         if self._current_tree is None:
             return None
 
-        return self._current_tree.query_ball_point(pop[["x", "y", "z"]].values, radius)
+        if isinstance(pop, pd.DataFrame):
+            positions = pop[["x", "y", "z"]].values
+        else:
+            positions = pop
+
+        return self._current_tree.query_ball_point(positions, radius)
+    
     def nearest_index(self, near_list):
         nearest_frozen_indices = [self._current_frozen.index[indices[0]] for indices in near_list]
         return nearest_frozen_indices
+
+    def positions(self, indices: List[int]) -> np.ndarray:
+        """Get positions of frozen particles by index."""
+        pos = self._current_frozen.reindex(indices)
+        pos = pos[["x", "y", "z"]].dropna(how='all')
+        return pos.values
 
     def freeze_particles(self, pop: pd.DataFrame) -> None:
         """Create frozen path points and continue paths with new particles."""
@@ -649,10 +663,9 @@ class PathDLA(Component):
 
         to_freeze = not_frozen[freeze_mask].copy()
         if not to_freeze.empty:
-            nearest_frozen_indices = self.freezer.nearest_index(near_frozen_indices[freeze_mask])
-            
-            to_freeze["parent_id"] = frozen.index[nearest_frozen_indices.flatten()]
+            to_freeze["parent_id"] = self.freezer.nearest_index(near_frozen_indices[freeze_mask])
             to_freeze["path_id"] = -1
+            to_freeze["depth"] = 1000
             to_freeze["frozen"] = True
             
             self.population_view.update(to_freeze)
