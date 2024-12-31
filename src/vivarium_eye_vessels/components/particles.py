@@ -2,7 +2,6 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
-import sklearn
 from scipy.stats import norm
 from scipy.spatial import cKDTree
 
@@ -21,6 +20,7 @@ class Particle3D(Component):
             "x", "y", "z",
             "vx", "vy", "vz",
             "frozen",
+            "depth",
             "parent_id",
             "path_id",
         ]
@@ -52,7 +52,20 @@ class Particle3D(Component):
         )
 
         self.randomness = builder.randomness.get_stream("particle.particles_3d")
-        self.builder = builder
+        self.setup_scale(builder)
+
+    def setup_scale(self, builder):
+        has_ellipsoid = "ellipsoid_containment" in builder.components.list_components()
+
+        if has_ellipsoid:
+            # Get ellipsoid parameters
+            config = builder.configuration.ellipsoid_containment
+            a = float(config.a)
+            b = float(config.b)
+            c = float(config.c)
+            self.scale = np.array([a,b,c])
+        else:
+            self.scale = np.ones(3)
 
     def register_force_pipelines(self, builder: Builder) -> None:
         """Register pipelines for force components and total magnitude."""
@@ -88,18 +101,6 @@ class Particle3D(Component):
         """Initialize particles with positions, velocities, and path tracking information."""
         pop = pd.DataFrame(index=simulant_data.index)
 
-        has_ellipsoid = "ellipsoid_containment" in self.builder.components.list_components()
-
-        if has_ellipsoid:
-            # Get ellipsoid parameters
-            config = self.builder.configuration.ellipsoid_containment
-            a = float(config.a)
-            b = float(config.b)
-            c = float(config.c)
-            self.scale = np.array([a,b,c])
-        else:
-            self.scale = np.ones(3)
-
         # Generate 3D normal points using ppf (inverse CDF)
         points = np.column_stack([
             norm.ppf(self.randomness.get_draw(pop.index, additional_key=f'xyz_{i}'))
@@ -110,9 +111,7 @@ class Particle3D(Component):
         points /= np.linalg.norm(points, axis=1)[:, np.newaxis]
         radii = np.array(self.randomness.get_draw(pop.index, additional_key='radius'))**(1/3)
         points *= radii[:, np.newaxis]
-        pop[["x", "y", "z"]] = points 
-        
-        pop[["x", "y", "z"]] *= self.scale
+        pop[["x", "y", "z"]] = points * self.scale
 
         # Generate random initial velocities
         v_range = self.initial_velocity_range
@@ -124,11 +123,17 @@ class Particle3D(Component):
             )
         pop[["vx", "vy", "vz"]] *= self.scale
 
-        # Initialize blocked time and tracking columns
+        # Initialize tree-structure-related columns
         pop["frozen"] = False
-        pop["parent_id"] = pd.NA
-        pop["path_id"] = pd.NA
+        pop["depth"] = -1
+        pop["parent_id"] = -1
+        pop["path_id"] = -1
 
+        self.initialize_circle_positions(pop)
+
+        self.population_view.update(pop)
+
+    def initialize_circle_positions(self, pop: pd.DataFrame) -> None:
         # Initialize active vessel in circle position
         config = self.config.initial_circle
         center = config.center
@@ -145,8 +150,6 @@ class Particle3D(Component):
                 ]
                 pop.loc[i, "path_id"] = i
                 pop.loc[i, ["vz"]] = [0,]
-
-        self.population_view.update(pop)
 
     def on_time_step(self, event: Event) -> None:
         """Update positions and velocities of non-frozen particles and track blocking forces."""

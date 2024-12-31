@@ -36,7 +36,7 @@ class ParticleVisualizer3D(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "parent_id", "path_id"]
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "depth", "parent_id", "path_id"]
 
     def setup(self, builder: Builder):
         pygame.init()
@@ -596,18 +596,16 @@ class ParticleVisualizer3D(Component):
 
     def _calculate_path_widths(self, population: pd.DataFrame) -> None:
         """Calculate branching counts and path widths for all paths using optimized methods."""
-        # Drop NaN parent_ids and convert to integers
-        parent_ids = population["path_id"].dropna()
-
-        path_widths = parent_ids.map({-1:1}).fillna(
-                               self.config["base_path_width"])
+        path_widths = np.where(population["parent_id"] >= 0,
+                               np.maximum(5-population["depth"], 2),
+                               0)
 
         return path_widths.astype(int)
 
     def _draw_vectors(self, population: pd.DataFrame, screen_points: np.ndarray, mask: np.ndarray, rotation_matrix: np.ndarray) -> None:
         """Draw force and velocity vectors for active non-frozen particles."""
         # Get only active non-frozen particles
-        active_mask = (population['path_id'].notna()) & (~population['frozen'])
+        active_mask = (population['path_id'] >= 0) & (~population['frozen'])
         active_particles = population[active_mask]
         
         if active_particles.empty:
