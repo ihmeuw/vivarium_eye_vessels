@@ -600,7 +600,7 @@ class ParticleVisualizer3D(Component):
                                np.maximum(5-population["depth"], 2),
                                0)
 
-        return path_widths.astype(int)
+        return path_widths
 
     def _draw_vectors(self, population: pd.DataFrame, screen_points: np.ndarray, mask: np.ndarray, rotation_matrix: np.ndarray) -> None:
         """Draw force and velocity vectors for active non-frozen particles."""

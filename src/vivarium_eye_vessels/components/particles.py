@@ -208,7 +208,7 @@ class PathFreezer(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "frozen",
+            "frozen", "depth",
             "parent_id", "path_id",
         ]
 
@@ -224,11 +224,11 @@ class PathFreezer(Component):
 
     def freeze_particles(self, pop: pd.DataFrame) -> None:
         """Create frozen path points and continue paths with new particles."""
-        active = pop[~pop.frozen & pop.path_id.notna()]
+        active = pop[~pop.frozen & (pop.path_id >= 0)]
         if active.empty:
             return
 
-        available = pop[~pop.frozen & pop.path_id.isna()]
+        available = pop[~pop.frozen & (pop.path_id < 0)]
         if len(available) >= len(active):
             to_freeze = available.iloc[:len(active)]
 
@@ -242,9 +242,9 @@ class PathFreezer(Component):
                 path_id=active.path_id.values,
                 parent_id=active.index.values,
                 frozen=False,
+                depth=active.depth.values,
             )
 
-            to_freeze["parent_id"] = to_freeze["parent_id"].astype(object)
             self.population_view.update(to_freeze)
 
         active.loc[:, "frozen"] = True
