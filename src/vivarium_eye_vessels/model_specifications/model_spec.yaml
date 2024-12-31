@@ -4,11 +4,12 @@ components:
         - particles.PathFreezer()
         - particles.PathSplitter()
         - particles.PathExtinction()
-        # - particles.MagneticParticleRepulsion()
-        # - particles.PathDLA()
+        - particles.SpatialIndex()
+        - particles.Flock()
+        - particles.PathDLA()
         - boundaries.EllipsoidContainment()
-        # - boundaries.CylinderExclusion()
-        # - boundaries.MagneticRepulsion()
+        - boundaries.CylinderExclusion()
+        - boundaries.MagneticRepulsion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -25,7 +26,7 @@ configuration:
             day: 1
         step_size: .1 # Days
     population:
-        population_size: 500
+        population_size: 3000
 
     # Base particle configuration
     particles:
@@ -36,8 +37,6 @@ configuration:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.1                # Radius of the circle
             n_vessels: 6               # Number of frozen particles in the circle
-        force_blocking_threshold: 0.2  # Threshold for considering a particle blocked
-        blocked_time_threshold: 0.1    # Time threshold (in simulation days) for terminating blocked paths
 
     # Path freezing configuration    
     path_freezer:
@@ -63,17 +62,16 @@ configuration:
         initial_near_radius: 0.05         # Distance for checking proximity to frozen particles
         final_near_radius: 0.02           # Distance for checking proximity to frozen particles
 
-    magnetic_particle_repulsion:
-        strength: 0.00001  # Strength of magnetic repulsion
-        max_distance: 0.1  # Maximum distance at which force acts
-        min_frozen_duration: .3  # Minimum time a particle must be frozen
-        max_force: 0.2  # Maximum force magnitude for stability
+    flock:
+        radius: .01
+        alignment_strength: .5
 
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
         c: 0.05  # Ellipsoid z semi-major axis
-        spring_constant: 5.0
+        magnetic_strength: .1
+        min_distance: .001
     
     cylinder_exclusion:
         radius: 0.2  # Radius of the cylinder

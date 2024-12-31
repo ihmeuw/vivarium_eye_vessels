@@ -20,22 +20,17 @@ class Particle3D(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "blocked_time",     # Time spent in high-force state
             "frozen",
             "parent_id",
             "path_id",
-            "creation_time",
-            "frozen_duration",
         ]
 
     CONFIGURATION_DEFAULTS = {
         "particles": {
             "overall_max_velocity_change": 0.1,
             "initial_velocity_range": (-0.05, 0.05),
-            "initial_circle": {"center": [1.5, 0.0, 0.5], "radius": 0.1, "n_vessels": 5},
-            "force_blocking_threshold": 0.5,  # Threshold for considering a particle blocked
-            "blocked_time_threshold": 1.0,    # Time threshold (in simulation days) for terminating blocked paths
             "terminal_velocity": 0.2,         # Maximum allowed velocity magnitude
+            "initial_circle": {"center": [1.5, 0.0, 0.5], "radius": 0.1, "n_vessels": 5},
         }
     }
 
@@ -44,8 +39,6 @@ class Particle3D(Component):
         self.step_size = builder.configuration.time.step_size
         self.overall_max_velocity_change = self.config.overall_max_velocity_change
         self.initial_velocity_range = self.config.initial_velocity_range
-        self.force_blocking_threshold = self.config.force_blocking_threshold
-        self.blocked_time_threshold = self.config.blocked_time_threshold
         self.terminal_velocity = self.config.terminal_velocity
 
         self.clock = builder.time.clock()
@@ -132,12 +125,9 @@ class Particle3D(Component):
         pop[["vx", "vy", "vz"]] *= self.scale
 
         # Initialize blocked time and tracking columns
-        pop["blocked_time"] = 0.0
         pop["frozen"] = False
-        pop["frozen_duration"] = np.nan
         pop["parent_id"] = pd.NA
         pop["path_id"] = pd.NA
-        pop["creation_time"] = self.clock()
 
         # Initialize active vessel in circle position
         config = self.config.initial_circle
@@ -165,14 +155,6 @@ class Particle3D(Component):
 
         if not active_particles.empty:
             self.update_positions(active_particles)
-            self.check_blocked_paths(active_particles[active_particles.path_id.notna()], event.step_size)
-            self.update_frozen_duration(pop[pop.frozen])
-
-    def update_frozen_duration(self, pop):
-        if len(pop) == 0:
-            return
-        pop.loc[:, 'frozen_duration'] += self.step_size
-        self.population_view.update(pop)
 
     def update_positions(self, particles: pd.DataFrame) -> None:
         """Update positions and velocities based on forces and random changes."""
@@ -208,29 +190,6 @@ class Particle3D(Component):
 
         self.population_view.update(particles)
 
-    def check_blocked_paths(self, particles: pd.DataFrame, step_size: pd.Timedelta) -> None:
-        """Check for and handle blocked paths based on force magnitude."""
-        # Get force magnitude from pipeline
-        force_magnitude = self.force_magnitude(particles.index)
-        # import pdb; pdb.set_trace()
-
-        # Update blocked time for particles experiencing high forces
-        blocked_mask = force_magnitude > self.force_blocking_threshold
-        particles.loc[blocked_mask, "blocked_time"] += step_size / pd.Timedelta(days=1)
-        particles.loc[~blocked_mask, "blocked_time"] = 0
-
-        # Freeze particles that have been blocked too long
-        to_freeze = particles[
-            (particles["blocked_time"] > self.blocked_time_threshold) & 
-            (particles["path_id"].notna())
-        ]
-        
-        if not to_freeze.empty:
-            to_freeze.loc[:, "frozen"] = True
-            to_freeze.loc[:, "path_id"] = -1
-
-            self.population_view.update(to_freeze)
-
 
 class PathFreezer(Component):
     """Component for freezing particle paths and creating continuations."""
@@ -246,9 +205,8 @@ class PathFreezer(Component):
         return [
             "x", "y", "z",
             "vx", "vy", "vz",
-            "frozen", "frozen_duration",
+            "frozen",
             "parent_id", "path_id",
-            "creation_time"
         ]
 
     def setup(self, builder: Builder) -> None:
@@ -281,7 +239,6 @@ class PathFreezer(Component):
                 path_id=active.path_id.values,
                 parent_id=active.index.values,
                 frozen=False,
-                frozen_duration=0.0,
             )
 
             to_freeze["parent_id"] = to_freeze["parent_id"].astype(object)
@@ -308,7 +265,7 @@ class PathSplitter(Component):
             "x", "y", "z",
             "vx", "vy", "vz",
             "frozen", "parent_id",
-            "path_id", "creation_time"
+            "path_id",
         ]
 
     def setup(self, builder: Builder) -> None:
@@ -502,151 +459,105 @@ class PathExtinction(Component):
             self.population_view.update(to_freeze)
 
 
-class MagneticParticleRepulsion(Component):
-    """Component that creates magnetic repulsive forces between particles."""
+class SpatialIndex(Component):
+    """Simple spatial indexing component that maintains a cKDTree of current positions."""
 
-    CONFIGURATION_DEFAULTS = {
-        "magnetic_particle_repulsion": {
-            "strength": 0.01,  # Strength of magnetic repulsion
-            "max_distance": 0.5,  # Maximum distance at which force acts
-            "min_frozen_duration": 1.0,  # Minimum time a particle must be frozen
-            "max_force": 1.0,  # Maximum force magnitude for stability
-        }
-    }
+    name = "particle_spatial_index"
 
     @property
     def columns_required(self) -> List[str]:
-        return [
-            "x", "y", "z",
-            "path_id",
-            "frozen", 
-            "frozen_duration"
-        ]
+        return ["x", "y", "z", "frozen"]
 
     def setup(self, builder: Builder) -> None:
-        # Get configuration values
-        self.config = builder.configuration.magnetic_particle_repulsion
-        self.strength = float(self.config.strength)
-        self.max_distance = float(self.config.max_distance) 
-        self.min_frozen_duration = float(self.config.min_frozen_duration)
-        self.max_force = float(self.config.max_force)
-        
-        # Get clock
-        self.clock = builder.time.clock()
-        
-        # Initialize force cache
-        self.force_cache: Dict[Tuple, np.ndarray] = {}
-        
-        # Register force modifiers for each dimension
-        for dim in ['x', 'y', 'z']:
-            builder.value.register_value_modifier(
-                f"particle.force.{dim}",
-                modifier=self.get_force_modifier(dim),
-                requires_columns=self.columns_required
+        self._current_tree = None
+        self._current_positions = None
+
+    def on_time_step(self, event: Event) -> None:
+        """Rebuild the cKDTree with current positions"""
+        pop = self.population_view.get(event.index)
+        pop = pop[pop.frozen]
+        self._current_positions = pop[["x", "y", "z"]].values
+        if len(pop) < 2:
+            self._current_tree = None
+            return
+
+        self._current_tree = cKDTree(self._current_positions)
+
+    def get_neighbor_pairs(self, radius: float):
+        """Get all pairs of particles within radius using efficient pair query."""
+        if self._current_tree is None:
+            return None
+
+        return self._current_tree.query_pairs(radius)
+
+    def query_radius(self, pop, radius: float):
+        """Get neighbor indices for each particle within radius."""
+        if self._current_tree is None:
+            return None
+
+        return self._current_tree.query_ball_point(pop[["x", "y", "z"]].values, radius)
+
+
+class Flock(Component):
+    """Component for implementing flocking behavior using shared spatial index"""
+
+    @property
+    def columns_required(self) -> List[str]:
+        return ["x", "y", "z",
+                "vx", "vy", "vz",
+                "path_id",
+                "frozen"]
+
+    CONFIGURATION_DEFAULTS = {
+        "flock": {"radius": 0.05, "alignment_strength": 0.91}
+    }
+
+    def setup(self, builder):
+        config = builder.configuration.flock
+        self.flock_radius = config.radius
+        self.alignment_strength = config.alignment_strength
+        self.spatial_index = builder.components.get_component("particle_spatial_index")
+
+    def on_time_step(self, event: Event) -> None:
+        """Update particle directions based on neighboring particles"""
+        pop = self.population_view.get(event.index)
+        if len(pop) < 2:
+            return
+        active = pop[(~pop.frozen) & pop.path_id.notna()]
+
+        # Get neighbor lists for each particle
+        neighbor_lists = self.spatial_index.query_radius(active, self.flock_radius)
+        if neighbor_lists is None:
+            return
+
+        # Track particles that will be updated
+        particles_to_update = []
+        new_vs = []
+
+        # Calculate new directions based on neighbors
+        for i, neighbors in enumerate(neighbor_lists):
+            if len(neighbors) > 1:  # Only update if particle has neighbors
+                # Calculate average direction of neighbors (excluding self)
+                neighbors = [n for n in neighbors if n != i]
+                neighbor_v = pop.iloc[neighbors][["vx", "vy", "vz"]].values
+
+                avg_v = np.mean(neighbor_v, axis=0)
+                # Interpolate between current direction and neighbor average
+                current_v = pop.iloc[i][["vx", "vy", "vz"]].values
+                new_v = (
+                    1 - self.alignment_strength
+                ) * current_v + self.alignment_strength * avg_v
+
+                particles_to_update.append(i)
+                new_vs.append(new_v)
+        new_vs = np.array(new_vs, dtype=float)
+        if particles_to_update:
+            updates = pd.DataFrame(
+                {"vx": new_vs[:, 0], "vy": new_vs[:, 1], "vz": new_vs[:, 2]},
+                index=active.index[particles_to_update],
             )
+            self.population_view.update(updates)
 
-    def get_force_modifier(self, dimension: str):
-        """Create a force modifier function for the specified dimension."""
-        dim_map = {'x': 0, 'y': 1, 'z': 2}
-        dim_idx = dim_map[dimension]
-        
-        def force_modifier(index: pd.Index, forces: pd.Series) -> pd.Series:
-            forces += pd.Series(
-                self.get_cached_forces(index)[:, dim_idx], 
-                index=index
-            )
-            return forces
-            
-        return force_modifier
-
-    def get_cached_forces(self, index: pd.Index) -> np.ndarray:
-        """Get or calculate forces for the current timestep."""
-        current_time = self.clock()
-        cache_key = (current_time, frozenset(index))
-        
-        if cache_key not in self.force_cache:
-            forces = self.calculate_forces(index)
-            self.force_cache[cache_key] = forces
-            
-            # Clear old cache entries
-            self.force_cache = {
-                k: v for k, v in self.force_cache.items() 
-                if k[0] == current_time
-            }
-            
-        return self.force_cache[cache_key]
-
-    def calculate_forces(self, index: pd.Index) -> np.ndarray:
-        """Calculate magnetic repulsion forces between particles."""
-        pop = self.population_view.get(index)
-        full_pop = self.population_view._manager.population
-        
-        # Initialize forces array
-        forces = np.zeros((len(index), 3))
-        
-        # Get active and frozen particles
-        active_mask = ~pop.frozen & pop.path_id.notna()
-        frozen_mask = full_pop.frozen #& (full_pop.frozen_duration >= self.min_frozen_duration)
-        
-        active = pop[active_mask]
-        frozen = full_pop[frozen_mask]
-        
-        if active.empty or frozen.empty:
-            return forces
-            
-        # Get positions
-        active_pos = active[["x", "y", "z"]].to_numpy()
-        frozen_pos = frozen[["x", "y", "z"]].to_numpy()
-        
-        # Use KD-tree for efficient neighbor queries
-        tree = cKDTree(frozen_pos)
-        
-        # Find all pairs within max_distance
-        pairs = tree.query_ball_point(active_pos, self.max_distance)
-        
-        # Calculate forces for each active particle
-        for i, nearby_indices in enumerate(pairs):
-            if not nearby_indices:
-                continue
-                
-            # Get displacement vectors to nearby frozen particles
-            displacements = active_pos[i] - frozen_pos[nearby_indices]
-            
-            # Calculate distances
-            distances = np.sqrt(np.sum(displacements**2, axis=1))
-            
-            # Avoid division by zero
-            distances = np.maximum(distances, 1e-10)
-            
-            # Calculate force magnitudes (inverse square law)
-            magnitudes = self.strength / (distances ** 2)
-            
-            # Normalize displacement vectors
-            unit_vectors = displacements / distances[:, np.newaxis]
-            
-            # Calculate force vectors
-            particle_forces = unit_vectors * magnitudes[:, np.newaxis]
-            
-            # Sum forces from all nearby particles
-            net_force = np.sum(particle_forces, axis=0)
-            
-            # Apply force magnitude limit for stability
-            force_magnitude = np.sqrt(np.sum(net_force**2))
-            if force_magnitude > self.max_force:
-                net_force *= self.max_force / force_magnitude
-                
-            # Add forces to correct index
-            forces[active.index.get_indexer([active.index[i]])] = net_force
-            
-        return forces
-
-    def on_time_step_cleanup(self, event: Event) -> None:
-        """Clear the force cache from the previous timestep."""
-        current_time = self.clock()
-        self.force_cache = {
-            k: v for k, v in self.force_cache.items() 
-            if k[0] == current_time
-        }
 
 class PathDLA(Component):
     """Component for freezing particles at the end of a path using DLA.

@@ -7,16 +7,21 @@ from vivarium.framework.engine import Builder
 from vivarium.framework.event import Event
 from vivarium.framework.population import SimulantData
 
-
 class EllipsoidContainment(Component):
-    """Component that keeps particles within an ellipsoid boundary using Hooke's law."""
+    """Component that keeps particles within an ellipsoid boundary using magnetic repulsion.
+    
+    The force follows an inverse square law relationship, similar to magnetic repulsion,
+    rather than the linear relationship of Hooke's law. This creates a stronger repulsion
+    as particles get closer to the boundary.
+    """
 
     CONFIGURATION_DEFAULTS = {
         "ellipsoid_containment": {
             "a": 1.0,  # Semi-major axis in x direction
             "b": 1.0,  # Semi-major axis in y direction
             "c": 1.0,  # Semi-major axis in z direction
-            "spring_constant": 0.1,  # Spring constant for Hooke's law (force/distance)
+            "magnetic_strength": 0.1,  # Strength coefficient for magnetic repulsion
+            "min_distance": 0.01,  # Minimum distance to prevent singularity
         }
     }
 
@@ -32,7 +37,8 @@ class EllipsoidContainment(Component):
         self.a = float(self.config.a)
         self.b = float(self.config.b)
         self.c = float(self.config.c)
-        self.spring_constant = float(self.config.spring_constant)
+        self.magnetic_strength = float(self.config.magnetic_strength)
+        self.min_distance = float(self.config.min_distance)
 
         # Pre-compute squared denominators for gradient calculation
         self.a2 = self.a * self.a
@@ -46,22 +52,22 @@ class EllipsoidContainment(Component):
         # Register force modifiers for each component
         builder.value.register_value_modifier(
             "particle.force.x",
-            modifier=self.ellipsoid_force_x,
+            modifier=self.magnetic_force_x,
             requires_columns=["x", "y", "z", "frozen"]
         )
         builder.value.register_value_modifier(
             "particle.force.y",
-            modifier=self.ellipsoid_force_y,
+            modifier=self.magnetic_force_y,
             requires_columns=["x", "y", "z", "frozen"]
         )
         builder.value.register_value_modifier(
             "particle.force.z",
-            modifier=self.ellipsoid_force_z,
+            modifier=self.magnetic_force_z,
             requires_columns=["x", "y", "z", "frozen"]
         )
 
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
-        """Calculate containment forces for all particles using vectorized operations."""
+        """Calculate magnetic repulsion forces for all particles using vectorized operations."""
         # Calculate normalized position coordinates
         x_norm = positions[:, 0] / self.a
         y_norm = positions[:, 1] / self.b
@@ -85,15 +91,19 @@ class EllipsoidContainment(Component):
         forces = np.zeros_like(positions)
         
         if np.any(outside_mask):
-            # For points outside, calculate restoring force
+            # For points outside, calculate repulsive force
             gradient_outside = gradient[outside_mask]
             
             # Normalize the gradient vectors
             gradient_norms = np.linalg.norm(gradient_outside, axis=1, keepdims=True)
             normalized_gradients = gradient_outside / gradient_norms
             
-            # Calculate force magnitude (proportional to distance from surface)
-            force_magnitudes = self.spring_constant * (np.sqrt(ellipsoid_val[outside_mask]) - 1)
+            # Calculate distance from surface for inverse square law
+            distances = np.maximum(np.sqrt(ellipsoid_val[outside_mask]) - 1, self.min_distance)
+            
+            # Calculate force magnitude using inverse square law
+            # Force = magnetic_strength / distance^2
+            force_magnitudes = self.magnetic_strength / (distances * distances)
             
             # Calculate forces (pointing inward)
             forces[outside_mask] = -normalized_gradients * force_magnitudes[:, np.newaxis]
@@ -123,28 +133,20 @@ class EllipsoidContainment(Component):
             
         return self.force_cache[cache_key]
 
-    def ellipsoid_force_x(self, index: pd.Index, forces: pd.Series) -> pd.Series:
-        """Add x-component of ellipsoid containment force."""
+    def magnetic_force_x(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add x-component of magnetic repulsion force."""
         forces += pd.Series(self.get_cached_forces(index)[:, 0], index=index)
         return forces
 
-    def ellipsoid_force_y(self, index: pd.Index, forces: pd.Series) -> pd.Series:
-        """Add y-component of ellipsoid containment force."""
+    def magnetic_force_y(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add y-component of magnetic repulsion force."""
         forces += pd.Series(self.get_cached_forces(index)[:, 1], index=index)
         return forces
 
-    def ellipsoid_force_z(self, index: pd.Index, forces: pd.Series) -> pd.Series:
-        """Add z-component of ellipsoid containment force."""
+    def magnetic_force_z(self, index: pd.Index, forces: pd.Series) -> pd.Series:
+        """Add z-component of magnetic repulsion force."""
         forces += pd.Series(self.get_cached_forces(index)[:, 2], index=index)
         return forces
-
-from typing import List
-import numpy as np
-import pandas as pd
-from vivarium import Component
-from vivarium.framework.engine import Builder
-from vivarium.framework.event import Event
-
 
 class CylinderExclusion(Component):
     """Component that repels particles from inside a cylindrical exclusion zone using Hooke's law."""

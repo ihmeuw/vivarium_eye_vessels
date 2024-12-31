@@ -612,7 +612,7 @@ class ParticleVisualizer3D(Component):
         
         if active_particles.empty:
             return
-            
+                    
         # Get force components for active particles
         force_x = self.force_x(active_particles.index)
         force_y = self.force_y(active_particles.index)
@@ -650,36 +650,12 @@ class ParticleVisualizer3D(Component):
             # Draw main line
             pygame.draw.line(self.screen, color, start, end, width)
             
-            # Calculate arrowhead size proportional to vector length
-            dx = end[0] - start[0]
-            dy = end[1] - start[1]
-            vector_length = np.sqrt(dx*dx + dy*dy)
             
-            if vector_length < 1:  # Skip arrowhead if vector too small
-                return
-                
-            arrow_size = min(vector_length * 0.2, 10)  # 20% of vector length, max 10 pixels
-            angle = np.arctan2(dy, dx)
-            
-            # Calculate arrowhead points
-            arrow_p1 = (
-                int(end[0] - arrow_size * np.cos(angle - np.pi/6)),
-                int(end[1] - arrow_size * np.sin(angle - np.pi/6))
-            )
-            arrow_p2 = (
-                int(end[0] - arrow_size * np.cos(angle + np.pi/6)),
-                int(end[1] - arrow_size * np.sin(angle + np.pi/6))
-            )
-            
-            # Draw arrowhead
-            pygame.draw.line(self.screen, color, end, arrow_p1, width)
-            pygame.draw.line(self.screen, color, end, arrow_p2, width)
-        
         # Draw all vectors
         force_color = self.config.get('force_color', (255, 255, 0))  # Yellow for forces
         velocity_color = self.config.get('velocity_color', (0, 255, 255))  # Cyan for velocities
         
-        visible_mask = start_mask & force_end_mask & velocity_end_mask
+        visible_mask = start_mask & velocity_end_mask
         
         for i in range(len(start_points)):
             if visible_mask[i]:
