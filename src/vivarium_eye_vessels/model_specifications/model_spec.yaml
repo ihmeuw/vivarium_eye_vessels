@@ -4,10 +4,10 @@ components:
         - particles.PathFreezer()
         - particles.PathSplitter()
         - particles.PathExtinction()
-        - particles.FrozenParticleRepulsion()
-        - particles.PathDLA()
+        # - particles.MagneticParticleRepulsion()
+        # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
-        - boundaries.CylinderExclusion()
+        # - boundaries.CylinderExclusion()
         # - boundaries.MagneticRepulsion()
         - visualizer.ParticleVisualizer3D()
 
@@ -37,7 +37,7 @@ configuration:
             radius: 0.1                # Radius of the circle
             n_vessels: 6               # Number of frozen particles in the circle
         force_blocking_threshold: 0.2  # Threshold for considering a particle blocked
-        blocked_time_threshold: 0.0    # Time threshold (in simulation days) for terminating blocked paths
+        blocked_time_threshold: 0.1    # Time threshold (in simulation days) for terminating blocked paths
 
     # Path freezing configuration    
     path_freezer:
@@ -63,12 +63,11 @@ configuration:
         initial_near_radius: 0.05         # Distance for checking proximity to frozen particles
         final_near_radius: 0.02           # Distance for checking proximity to frozen particles
 
-    frozen_repulsion:
-        force_type: "magnetic"  # "spring" or "magnetic"
-        spring_constant: 5  # Spring constant for Hooke's law (force/distance);  acts as magnetic strength when using magnetic force
-        max_distance: .2  # Maximum distance for force calculation (acts as spring rest length)
-        min_frozen_duration: 0.1  # Minimum duration (in days) a particle must be frozen to contribute to repulsion
-
+    magnetic_particle_repulsion:
+        strength: 0.00001  # Strength of magnetic repulsion
+        max_distance: 0.1  # Maximum distance at which force acts
+        min_frozen_duration: .3  # Minimum time a particle must be frozen
+        max_force: 0.2  # Maximum force magnitude for stability
 
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
@@ -88,7 +87,7 @@ configuration:
             x: 1.0
             y: 0.0
             z: 0.0
-        strength: 0.001
+        strength: 0.0001
         min_distance: 0.05
 
     visualization:
