@@ -379,7 +379,7 @@ class PathSplitter(Component):
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_splitter
-        self.step_count = 0
+        self.step_count = 80
         self.next_path_id = builder.configuration.particles.initial_circle.n_vessels+1
         self.step_size = builder.configuration.time.step_size
         self.randomness = builder.randomness.get_stream("path_splitter")
@@ -424,9 +424,9 @@ class PathSplitter(Component):
 
             # Calculate normalized velocity and perpendicular vector
             vel_norm = vel / speed
-            perp = np.array([-vel_norm[1], vel_norm[0], 0])
-            if np.all(perp == 0):
-                perp = np.array([0, -vel_norm[2], vel_norm[1]])
+            perp = np.array([0, -vel_norm[2], vel_norm[1]])
+            if np.allclose(perp, 0):
+                perp = np.array([-vel_norm[1], vel_norm[0], 0])
             perp = perp / np.linalg.norm(perp)
 
             # Calculate new velocities for both branches
@@ -441,8 +441,8 @@ class PathSplitter(Component):
 
             # Calculate offset positions
             original_pos = np.array([original.x, original.y, original.z])
-            pos_1 = original_pos
-            pos_2 = original_pos
+            pos_1 = original_pos + new_vel_1_norm * speed * self.step_size
+            pos_2 = original_pos + new_vel_2_norm * speed * self.step_size
 
             # Create DataFrame rows with correct dtypes from the start
             # Freeze original particle at split point
