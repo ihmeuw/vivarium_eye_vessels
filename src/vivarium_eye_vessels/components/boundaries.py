@@ -34,6 +34,10 @@ class BaseForceComponent(Component):
     @property
     def columns_required(self) -> List[str]:
         return ["x", "y", "z", "frozen"]
+    
+    @property
+    def filter_str(self) -> str:
+        return "not frozen"
         
     def setup(self, builder: Builder) -> None:
         self.force_cache = {}
@@ -65,7 +69,7 @@ class BaseForceComponent(Component):
         
         if cache_key not in self.force_cache:
             pop = self.population_view.get(index)
-            active_particles = pop[~pop.frozen]
+            active_particles = pop.query(self.filter_str)
             
             if active_particles.empty:
                 self.force_cache[cache_key] = np.zeros((len(index), 3))
@@ -236,6 +240,7 @@ class PointRepulsion(BaseForceComponent):
             "magnetic_strength": 0.05,
             "min_distance": 0.1,
             "spring_constant": 0.1,
+            "radius": 0.05,  # Interaction radius
         }
     }
     
@@ -245,18 +250,18 @@ class PointRepulsion(BaseForceComponent):
         config = builder.configuration.point_repulsion
         self.setup_force_calculator(config)
 
-        # Set up position
         self.position = np.array([
             float(config.position.x),
             float(config.position.y),
             float(config.position.z)
         ])
+        self.radius = float(config.radius)
         
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
         # Calculate displacements and distances
         displacements = self.position - positions
         distances = np.sqrt(np.sum(displacements**2, axis=1))
-        distances = np.where(distances > .5, 0, distances)
+        distances = np.where(distances > self.radius, 0, distances)
         
         # Calculate normalized directions
         with np.errstate(invalid='ignore', divide='ignore'):
@@ -286,13 +291,16 @@ class FrozenRepulsion(BaseForceComponent):
     def columns_required(self) -> List[str]:
         return super().columns_required + ["path_id"]
 
+    @property
+    def filter_str(self) -> str:
+        return "not frozen and path_id >= 0"
+
     def setup(self, builder: Builder) -> None:
         super().setup(builder)
         config = builder.configuration.frozen_repulsion
         self.setup_force_calculator(config)
 
         self.radius = float(config.radius)
-        
         self.freezer = builder.components.get_component("path_freezer")
 
     def calculate_forces_vectorized(self, positions: np.ndarray) -> np.ndarray:
@@ -311,7 +319,6 @@ class FrozenRepulsion(BaseForceComponent):
             # Calculate distances
             distances = np.sqrt(np.sum(displacements**2, axis=1))
             
-            
             # Calculate normalized direction vectors
             with np.errstate(invalid='ignore', divide='ignore'):
                 directions = displacements / distances[:, np.newaxis]
@@ -326,25 +333,3 @@ class FrozenRepulsion(BaseForceComponent):
             )
         
         return forces
-        
-    def get_cached_forces(self, index: pd.Index) -> np.ndarray:
-        """Override to consider path_id in active particle selection"""
-        current_time = self.clock()
-        cache_key = (current_time, tuple(index))
-        
-        if cache_key not in self.force_cache:
-            pop = self.population_view.get(index)
-            active_mask = (~pop.frozen) & (pop.path_id >= 0)
-            active = pop[active_mask]
-            
-            forces = np.zeros((len(index), 3))
-            if not active.empty:
-                positions = active[["x", "y", "z"]].to_numpy()
-                active_forces = self.calculate_forces_vectorized(positions)
-                forces[active.index.get_indexer(active.index)] = active_forces
-                
-            self.force_cache[cache_key] = forces
-            self.force_cache = {k: v for k, v in self.force_cache.items() 
-                              if k[0] == current_time}
-            
-        return self.force_cache[cache_key]

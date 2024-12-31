@@ -13,7 +13,7 @@ components:
 
 configuration:
     randomness:
-        random_seed: 43
+        random_seed: 42
     time:
         start:
             year: 2025
@@ -51,7 +51,7 @@ configuration:
         check_interval: 20
         extinction_start_time: '2025-03-01'
         extinction_end_time: '2025-05-02'
-        initial_freeze_probability: 0.03
+        initial_freeze_probability: 0.02
         final_freeze_probability: 1
 
     path_dla:
@@ -60,10 +60,6 @@ configuration:
         stickiness: 1.0                   # Probability of sticking when near frozen particle
         initial_near_radius: 0.05         # Distance for checking proximity to frozen particles
         final_near_radius: 0.02           # Distance for checking proximity to frozen particles
-
-    flock:
-        radius: .01
-        alignment_strength: .5
 
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
@@ -87,6 +83,7 @@ configuration:
             z: 0.0
         force_type: hookean
         spring_constant: 1  # Spring constant for Hooke's law (force/distance)
+        radius: 0.1  # Interaction radius
 
     frozen_repulsion:
         force_type: hookean
