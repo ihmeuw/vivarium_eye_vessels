@@ -1,15 +1,15 @@
 components:
     vivarium_eye_vessels.components:
         - particles.Particle3D()
-        - particles.PathFreezer()
-        - particles.PathSplitter()
-        - particles.PathExtinction()
-        - particles.SpatialIndex()
-        - particles.Flock()
-        - particles.PathDLA()
+        # - particles.PathFreezer()
+        # - particles.PathSplitter()
+        # - particles.PathExtinction()
+        # - particles.SpatialIndex()
+        # - particles.Flock()
+        # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
-        - boundaries.MagneticRepulsion()
+        - boundaries.PointRepulsion()
         - visualizer.ParticleVisualizer3D()
 
 configuration:
@@ -69,24 +69,25 @@ configuration:
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.05  # Ellipsoid z semi-major axis
-        magnetic_strength: .01
-        min_distance: .001
+        c: 0.1  # Ellipsoid z semi-major axis
+        force_type: hookean
+        spring_constant: 1
     
     cylinder_exclusion:
         radius: 0.2  # Radius of the cylinder
         height: 0.4  # Height of the cylinder
         center: [-.5, 0.0, -0.2]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
-        spring_constant: 5.0  # Spring constant for Hooke's law (force/distance)
+        force_type: hookean
+        spring_constant: 2.0  # Spring constant for Hooke's law (force/distance)
         
-    magnetic_repulsion:
+    point_repulsion:
         position:
             x: 1.0
             y: 0.0
             z: 0.0
-        strength: 0.001
-        min_distance: 0.05
+        force_type: hookean
+        spring_constant: 1  # Spring constant for Hooke's law (force/distance)
 
     visualization:
         background_color: [0, 0, 0]
