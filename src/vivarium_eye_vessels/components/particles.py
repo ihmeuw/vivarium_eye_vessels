@@ -503,67 +503,6 @@ class PathSplitter(Component):
         ])
 
 
-class Flock(Component):
-    """Component for implementing flocking behavior using shared spatial index"""
-
-    @property
-    def columns_required(self) -> List[str]:
-        return ["x", "y", "z",
-                "vx", "vy", "vz",
-                "path_id",
-                "frozen"]
-
-    CONFIGURATION_DEFAULTS = {
-        "flock": {"radius": 0.05, "alignment_strength": 0.91}
-    }
-
-    def setup(self, builder):
-        config = builder.configuration.flock
-        self.flock_radius = config.radius
-        self.alignment_strength = config.alignment_strength
-        self.spatial_index = builder.components.get_component("particle_spatial_index")
-
-    def on_time_step(self, event: Event) -> None:
-        """Update particle directions based on neighboring particles"""
-        pop = self.population_view.get(event.index)
-        if len(pop) < 2:
-            return
-        active = pop[(~pop.frozen) & pop.path_id.notna()]
-
-        # Get neighbor lists for each particle
-        neighbor_lists = self.spatial_index.query_radius(active, self.flock_radius)
-        if neighbor_lists is None:
-            return
-
-        # Track particles that will be updated
-        particles_to_update = []
-        new_vs = []
-
-        # Calculate new directions based on neighbors
-        for i, neighbors in enumerate(neighbor_lists):
-            if len(neighbors) > 1:  # Only update if particle has neighbors
-                # Calculate average direction of neighbors (excluding self)
-                neighbors = [n for n in neighbors if n != i]
-                neighbor_v = pop.iloc[neighbors][["vx", "vy", "vz"]].values
-
-                avg_v = np.mean(neighbor_v, axis=0)
-                # Interpolate between current direction and neighbor average
-                current_v = pop.iloc[i][["vx", "vy", "vz"]].values
-                new_v = (
-                    1 - self.alignment_strength
-                ) * current_v + self.alignment_strength * avg_v
-
-                particles_to_update.append(i)
-                new_vs.append(new_v)
-        new_vs = np.array(new_vs, dtype=float)
-        if particles_to_update:
-            updates = pd.DataFrame(
-                {"vx": new_vs[:, 0], "vy": new_vs[:, 1], "vz": new_vs[:, 2]},
-                index=active.index[particles_to_update],
-            )
-            self.population_view.update(updates)
-
-
 class PathDLA(Component):
     """Component for freezing particles at the end of a path using DLA.
     
@@ -585,8 +524,8 @@ class PathDLA(Component):
     def columns_required(self) -> List[str]:
         return [
             "x", "y", "z",
-            "frozen", "path_id",
-            "parent_id",
+            "frozen", "depth",
+            "path_id", "parent_id",
         ]
 
     def setup(self, builder: Builder) -> None:

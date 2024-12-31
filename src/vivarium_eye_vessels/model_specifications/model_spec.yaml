@@ -91,7 +91,7 @@ configuration:
     frozen_repulsion:
         force_type: hookean
         spring_constant: 1.0  # Spring constant for Hooke's law (force/distance)
-        radius: 0.2  # Interaction radius
+        radius: 0.05  # Interaction radius
 
     visualization:
         background_color: [0, 0, 0]
