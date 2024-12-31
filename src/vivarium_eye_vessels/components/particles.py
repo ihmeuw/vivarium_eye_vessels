@@ -195,7 +195,8 @@ class Particle3D(Component):
 
 
 class PathFreezer(Component):
-    """Component for freezing particle paths and creating continuations."""
+    """Component for freezing particle paths and creating continuations.
+    Also mantains KDTree of frozen particles for efficient querying."""
 
     CONFIGURATION_DEFAULTS = {
         "path_freezer": {
@@ -216,11 +217,35 @@ class PathFreezer(Component):
         self.config = builder.configuration.path_freezer
         self.step_count = 0
 
+        self._current_tree = None
+        self._current_frozen = None
+
     def on_time_step(self, event: Event) -> None:
         self.step_count += 1
         if self.step_count % self.config.freeze_interval == 0:
             pop = self.population_view.get(event.index)
             self.freeze_particles(pop)
+
+            self._current_frozen = pop[pop.frozen]
+            if len(self._current_frozen) < 2:
+                self._current_tree = None
+            else:
+                self._current_tree = cKDTree(self._current_frozen[["x", "y", "z"]].values)
+
+    def get_neighbor_pairs(self, radius: float):
+        """Get all pairs of frozen particles within radius using efficient pair query."""
+        if self._current_tree is None:
+            return None
+
+        return self._current_tree.query_pairs(radius)
+
+    def query_radius(self, pop, radius: float):
+        """Get neighbor indices for each particle within radius."""
+        if self._current_tree is None:
+            return None
+
+        return self._current_tree.query_ball_point(pop[["x", "y", "z"]].values, radius)
+
 
     def freeze_particles(self, pop: pd.DataFrame) -> None:
         """Create frozen path points and continue paths with new particles."""
@@ -470,35 +495,6 @@ class SpatialIndex(Component):
     @property
     def columns_required(self) -> List[str]:
         return ["x", "y", "z", "path_id", "frozen"]
-
-    def setup(self, builder: Builder) -> None:
-        self._current_tree = None
-        self._current_positions = None
-
-    def on_time_step(self, event: Event) -> None:
-        """Rebuild the cKDTree with current positions"""
-        pop = self.population_view.get(event.index)
-        pop = pop[pop.frozen & pop.path_id.notna()]
-        self._current_positions = pop[["x", "y", "z"]].values
-        if len(pop) < 2:
-            self._current_tree = None
-            return
-
-        self._current_tree = cKDTree(self._current_positions)
-
-    def get_neighbor_pairs(self, radius: float):
-        """Get all pairs of particles within radius using efficient pair query."""
-        if self._current_tree is None:
-            return None
-
-        return self._current_tree.query_pairs(radius)
-
-    def query_radius(self, pop, radius: float):
-        """Get neighbor indices for each particle within radius."""
-        if self._current_tree is None:
-            return None
-
-        return self._current_tree.query_ball_point(pop[["x", "y", "z"]].values, radius)
 
 
 class Flock(Component):
