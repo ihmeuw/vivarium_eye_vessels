@@ -276,6 +276,68 @@ class PathFreezer(Component):
         self.population_view.update(active)
 
 
+class PathExtinction(Component):
+    """Component for controlling extinction of active paths over time."""
+
+    CONFIGURATION_DEFAULTS = {
+        "path_extinction": {
+            "extinction_start_time": "2020-01-01",
+            "extinction_end_time": "2020-12-31",
+            "initial_freeze_probability": 0.0,
+            "final_freeze_probability": 0.3,
+            "check_interval": 5,
+        }
+    }
+
+    @property
+    def columns_required(self) -> List[str]:
+        return ["frozen", "path_id"]
+
+    def setup(self, builder: Builder) -> None:
+        self.config = builder.configuration.path_extinction
+        self.start_time = pd.Timestamp(self.config.extinction_start_time)
+        self.end_time = pd.Timestamp(self.config.extinction_end_time)
+        self.p_start = self.config.initial_freeze_probability
+        self.p_end = self.config.final_freeze_probability
+        self.clock = builder.time.clock()
+        self.step_count = 0
+        self.randomness = builder.randomness.get_stream("path_extinction")
+
+    def get_current_freeze_probability(self) -> float:
+        """Calculate current freeze probability based on time."""
+        current_time = self.clock()
+
+        if current_time < self.start_time:
+            return self.p_start
+        elif current_time > self.end_time:
+            return self.p_end
+        else:
+            progress = (current_time - self.start_time) / (self.end_time - self.start_time)
+            return self.p_start + (self.p_end - self.p_start) * progress
+
+    def on_time_step(self, event: Event) -> None:
+        """Check for path freezing on configured interval."""
+        self.step_count += 1
+
+        if self.step_count % self.config.check_interval != 0:
+            return
+
+        pop = self.population_view.get(event.index)
+        active = pop[~pop.frozen & pop.path_id.notna()]
+
+        if active.empty:
+            return
+
+        p_freeze = self.get_current_freeze_probability()
+        to_freeze = active[self.randomness.get_draw(active.index) < p_freeze]
+
+        if not to_freeze.empty:
+            to_freeze.loc[:, "frozen"] = True
+            to_freeze.loc[:, "path_id"] = -1
+            self.population_view.update(to_freeze)
+
+
+
 class PathSplitter(Component):
     """Component for splitting particle paths into two branches."""
 
@@ -424,77 +486,6 @@ class PathSplitter(Component):
             [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
             [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]
         ])
-
-
-class PathExtinction(Component):
-    """Component for controlling extinction of active paths over time."""
-
-    CONFIGURATION_DEFAULTS = {
-        "path_extinction": {
-            "extinction_start_time": "2020-01-01",
-            "extinction_end_time": "2020-12-31",
-            "initial_freeze_probability": 0.0,
-            "final_freeze_probability": 0.3,
-            "check_interval": 5,
-        }
-    }
-
-    @property
-    def columns_required(self) -> List[str]:
-        return ["frozen", "path_id"]
-
-    def setup(self, builder: Builder) -> None:
-        self.config = builder.configuration.path_extinction
-        self.start_time = pd.Timestamp(self.config.extinction_start_time)
-        self.end_time = pd.Timestamp(self.config.extinction_end_time)
-        self.p_start = self.config.initial_freeze_probability
-        self.p_end = self.config.final_freeze_probability
-        self.clock = builder.time.clock()
-        self.step_count = 0
-        self.randomness = builder.randomness.get_stream("path_extinction")
-
-    def get_current_freeze_probability(self) -> float:
-        """Calculate current freeze probability based on time."""
-        current_time = self.clock()
-
-        if current_time < self.start_time:
-            return self.p_start
-        elif current_time > self.end_time:
-            return self.p_end
-        else:
-            progress = (current_time - self.start_time) / (self.end_time - self.start_time)
-            return self.p_start + (self.p_end - self.p_start) * progress
-
-    def on_time_step(self, event: Event) -> None:
-        """Check for path freezing on configured interval."""
-        self.step_count += 1
-
-        if self.step_count % self.config.check_interval != 0:
-            return
-
-        pop = self.population_view.get(event.index)
-        active = pop[~pop.frozen & pop.path_id.notna()]
-
-        if active.empty:
-            return
-
-        p_freeze = self.get_current_freeze_probability()
-        to_freeze = active[self.randomness.get_draw(active.index) < p_freeze]
-
-        if not to_freeze.empty:
-            to_freeze.loc[:, "frozen"] = True
-            to_freeze.loc[:, "path_id"] = -1
-            self.population_view.update(to_freeze)
-
-
-class SpatialIndex(Component):
-    """Simple spatial indexing component that maintains a cKDTree of current positions."""
-
-    name = "particle_spatial_index"
-
-    @property
-    def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "path_id", "frozen"]
 
 
 class Flock(Component):
