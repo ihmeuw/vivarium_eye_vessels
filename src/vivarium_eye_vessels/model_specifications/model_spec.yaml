@@ -13,7 +13,7 @@ components:
 
 configuration:
     randomness:
-        random_seed: 1234
+        random_seed: 12345
     time:
         start:
             year: 2025
@@ -23,19 +23,19 @@ configuration:
             year: 2025
             month: 9
             day: 1
-        step_size: .01 # Days
+        step_size: .05 # Days
     population:
-        population_size: 3000
+        population_size: 2000
 
     # Base particle configuration
     particles:
-        overall_max_velocity_change: 0.05
+        overall_max_velocity_change: 0.1
         initial_velocity_range: [-0.02, 0.02]
         terminal_velocity: 0.1
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.2                # Radius of the circle
-            n_vessels: 6               # Number of frozen particles in the circle
+            n_vessels: 8               # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -43,15 +43,15 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 200     # Steps between checking for splits
+        split_interval: 100     # Steps between checking for splits
         split_angle: 60         # Angle in degrees between split paths
         split_probability: .2  # Probability of eligible path splitting
 
     path_extinction:
-        check_interval: 200
+        check_interval: 100
         extinction_start_time: '2025-03-01'
         extinction_end_time: '2025-05-02'
-        initial_freeze_probability: 0.1
+        initial_freeze_probability: 0.2
         final_freeze_probability: 1.0
         force_threshold: 5.0
 
@@ -89,8 +89,9 @@ configuration:
     frozen_repulsion:
         force_type: hookean
         spring_constant: 1.0  # Spring constant for Hooke's law (force/distance)
-        radius: 0.2  # Interaction radius
-        delay: 1 # days
+        interaction_radius: 0.2
+        freeze_radius: 0.03
+        delay: 2 # days
 
     visualization:
         background_color: [0, 0, 0]
