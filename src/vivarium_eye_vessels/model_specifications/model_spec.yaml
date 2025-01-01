@@ -2,12 +2,12 @@ components:
     vivarium_eye_vessels.components:
         - particles.Particle3D()
         - particles.PathFreezer()
-        # - particles.PathExtinction()
+        - particles.PathExtinction()
         - particles.PathSplitter()
-        # - particles.PathDLA()
+        - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
-        # - boundaries.PointRepulsion()
+        - boundaries.PointRepulsion()
         - boundaries.FrozenRepulsion()
         - visualizer.ParticleVisualizer3D()
 
@@ -23,19 +23,19 @@ configuration:
             year: 2025
             month: 9
             day: 1
-        step_size: .1 # Days
+        step_size: .01 # Days
     population:
-        population_size: 300
+        population_size: 3000
 
     # Base particle configuration
     particles:
-        overall_max_velocity_change: 0.02
+        overall_max_velocity_change: 0.05
         initial_velocity_range: [-0.02, 0.02]
-        terminal_velocity: 0.2
+        terminal_velocity: 0.1
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.2                # Radius of the circle
-            n_vessels: 1               # Number of frozen particles in the circle
+            n_vessels: 6               # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -43,16 +43,17 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 100     # Steps between checking for splits
+        split_interval: 200     # Steps between checking for splits
         split_angle: 60         # Angle in degrees between split paths
-        split_probability: 1  # Probability of eligible path splitting
+        split_probability: .2  # Probability of eligible path splitting
 
     path_extinction:
-        check_interval: 20
+        check_interval: 200
         extinction_start_time: '2025-03-01'
         extinction_end_time: '2025-05-02'
-        initial_freeze_probability: 0.0
-        final_freeze_probability: 1
+        initial_freeze_probability: 0.1
+        final_freeze_probability: 1.0
+        force_threshold: 5.0
 
     path_dla:
         dla_start_time: '2025-05-01'
@@ -66,7 +67,7 @@ configuration:
         b: 1    # Ellipsoid y semi-major axis
         c: 0.025  # Ellipsoid z semi-major axis
         force_type: hookean
-        spring_constant: 1
+        spring_constant: 10
     
     cylinder_exclusion:
         radius: 0.2  # Radius of the cylinder
@@ -74,7 +75,7 @@ configuration:
         center: [-.5, 0.0, -0.2]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
         force_type: hookean
-        spring_constant: 2.0  # Spring constant for Hooke's law (force/distance)
+        spring_constant: 10  # Spring constant for Hooke's law (force/distance)
         
     point_repulsion:
         position:
@@ -89,7 +90,7 @@ configuration:
         force_type: hookean
         spring_constant: 1.0  # Spring constant for Hooke's law (force/distance)
         radius: 0.2  # Interaction radius
-        delay: 500 # days
+        delay: 1 # days
 
     visualization:
         background_color: [0, 0, 0]

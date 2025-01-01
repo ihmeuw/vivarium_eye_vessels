@@ -295,15 +295,16 @@ class PathFreezer(Component):
 
 
 class PathExtinction(Component):
-    """Component for controlling extinction of active paths over time."""
+    """Component for controlling extinction of active paths based on time and force."""
 
     CONFIGURATION_DEFAULTS = {
         "path_extinction": {
-            "extinction_start_time": "2020-01-01",
+            "extinction_start_time": "2020-01-01", 
             "extinction_end_time": "2020-12-31",
             "initial_freeze_probability": 0.0,
             "final_freeze_probability": 0.3,
             "check_interval": 5,
+            "force_threshold": 10.0  # Force magnitude threshold for extinction
         }
     }
 
@@ -317,14 +318,19 @@ class PathExtinction(Component):
         self.end_time = pd.Timestamp(self.config.extinction_end_time)
         self.p_start = self.config.initial_freeze_probability
         self.p_end = self.config.final_freeze_probability
+        self.force_threshold = self.config.force_threshold
+        
         self.clock = builder.time.clock()
         self.step_count = 0
         self.randomness = builder.randomness.get_stream("path_extinction")
+        
+        # Get the force magnitude pipeline
+        self.force_magnitude = builder.value.get_value("particle.force.magnitude")
 
     def get_current_freeze_probability(self) -> float:
         """Calculate current freeze probability based on time."""
         current_time = self.clock()
-
+        
         if current_time < self.start_time:
             return self.p_start
         elif current_time > self.end_time:
@@ -334,28 +340,29 @@ class PathExtinction(Component):
             return self.p_start + (self.p_end - self.p_start) * progress
 
     def on_time_step(self, event: Event) -> None:
-        """Check for path freezing on configured interval."""
+        """Check for path freezing based on time and force magnitude."""
         self.step_count += 1
-
+        
         if self.step_count % self.config.check_interval != 0:
             return
 
         pop = self.population_view.get(event.index)
         active = pop[~pop.frozen & (pop.path_id >= 0)]
-
+        
         if active.empty:
             return
 
-        p_freeze = self.get_current_freeze_probability()
-        to_freeze = active[self.randomness.get_draw(active.index) < p_freeze]
+        p_freeze_mean = self.get_current_freeze_probability()
+        forces = self.force_magnitude(active.index)
 
+        p_freeze = p_freeze_mean * forces / forces.sum()
+        to_freeze = active[self.randomness.get_draw(active.index) < p_freeze]
+        
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
             to_freeze.loc[:, "freeze_time"] = self.clock()
-            to_freeze.loc[:, "path_id"] = -1  # Mark as end of path, which will be used by PathDLA Component
+            to_freeze.loc[:, "path_id"] = -1  # Mark as end of path
             self.population_view.update(to_freeze)
-
-
 
 class PathSplitter(Component):
     """Component for splitting particle paths into two branches."""

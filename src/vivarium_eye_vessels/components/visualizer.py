@@ -36,12 +36,18 @@ class ParticleVisualizer3D(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "depth", "parent_id", "path_id"]
+        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "freeze_time", "depth", "parent_id", "path_id"]
 
     def setup(self, builder: Builder):
         pygame.init()
 
         self.config = builder.configuration.visualization
+
+        if "frozen_repulsion" in builder.components.list_components():
+            self.delay = builder.configuration.frozen_repulsion.delay
+        else:
+            self.delay = 0
+
         screen_width = self.config.get("screen_width", 0)
         screen_height = self.config.get("screen_height", 0)
         if screen_width == 0 and screen_height == 0:
@@ -411,11 +417,23 @@ class ParticleVisualizer3D(Component):
         points = population[["x", "y", "z"]].values
         screen_points, mask = self._project_points(points, rotation_matrix)
 
-        colors = np.where(
-            population["frozen"].values[:, np.newaxis],
-            self.config["frozen_color"],
-            self.config["particle_color"],
-        )
+        current_time = self.clock()
+        frozen_time = ((current_time - population["freeze_time"]) / pd.Timedelta(days=1)).values
+        frozen = population["frozen"].values
+        delay = float(self.delay)
+        
+        # Initialize with default particle color
+        colors = np.full((len(population), 3), self.config["particle_color"])
+        
+        # Set frozen particle colors
+        frozen_mask = frozen
+        colors[frozen_mask] = self.config["frozen_color"]
+        
+        # Set repulsive particle colors (frozen longer than delay)
+        repulsive_mask = frozen & (frozen_time > delay)
+        colors[repulsive_mask] = (200, 150, 150)  # TODO: Make this a config option
+
+
 
         # Override colors for points in cylinder
         if self.has_cylinder:

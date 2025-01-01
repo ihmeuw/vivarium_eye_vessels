@@ -289,6 +289,7 @@ class FrozenRepulsion(BaseForceComponent):
             "magnetic_strength": 0.1,
             "min_distance": 0.01,
             "spring_constant": 0.1,
+            "delay": 1.0,  # days frozen before exerting force on particles in same path
         }
     }
 
