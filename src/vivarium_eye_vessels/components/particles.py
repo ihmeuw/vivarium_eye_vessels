@@ -274,12 +274,6 @@ class PathFreezer(Component):
 
         return self._current_tree.query_ball_point(positions, radius)
 
-    def nearest_index(self, near_list):
-        nearest_frozen_indices = [
-            self._current_frozen.index[indices[0]] for indices in near_list
-        ]
-        return nearest_frozen_indices
-
     def get_population(self, indices: List[int]) -> pd.DataFrame:
         pos = self._current_frozen.reindex(indices)
         pos = pos.dropna(how="all")
@@ -648,20 +642,28 @@ class PathDLA(Component):
             pop = self.population_view.get(event.index)
             self.dla_freeze(pop)
 
+    def update_tree(self, pop):
+        self._current_frozen = pop[pop.frozen]
+        if len(self._current_frozen) < 2:
+            self._current_tree = None
+        else:
+            self._current_tree = cKDTree(self._current_frozen[["x", "y", "z"]].values)
+
     def dla_freeze(self, pop: pd.DataFrame) -> None:
         """Freeze particles near frozen particles using DLA.
         Only freeze to particles with path_id < 0
         """
+        #  only use particles with path_id < 0 (i.e. in frozen DataFrame, not all in freezer object )
         frozen = pop[pop.frozen & (pop.path_id < 0)]
         if frozen.empty:
             return
+        self.update_tree(frozen)
 
         not_frozen = pop[~pop.frozen & (pop.path_id < 0)]
         if not_frozen.empty:
             return
-
-        near_frozen_indices = self.freezer.query_radius(not_frozen, self.near_radius)
-        # FIXME: should only use particles with path_id < 0 (i.e. in frozen DataFrame, not all in freezer object )
+        
+        near_frozen_indices = self._current_tree.query_ball_point(not_frozen[["x", "y", "z"]].values, self.near_radius)
         near_particles = np.array([len(indices) > 0 for indices in near_frozen_indices])
         stickiness_probabilities = self.randomness.get_draw(
             not_frozen.index, additional_key="stickiness"
@@ -672,9 +674,9 @@ class PathDLA(Component):
 
         to_freeze = not_frozen[freeze_mask].copy()
         if not to_freeze.empty:
-            to_freeze["parent_id"] = self.freezer.nearest_index(
-                near_frozen_indices[freeze_mask]
-            )
+            to_freeze["parent_id"] = frozen.index[
+                [indices[0] for indices in near_frozen_indices[freeze_mask]]
+            ]
             to_freeze["path_id"] = -1
             to_freeze["depth"] = 1000
             to_freeze["frozen"] = True
