@@ -2,9 +2,8 @@ from typing import Any, Dict, List
 
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
 from scipy.spatial import cKDTree
-
+from scipy.stats import norm
 from vivarium import Component
 from vivarium.framework.engine import Builder
 from vivarium.framework.event import Event
@@ -17,9 +16,14 @@ class Particle3D(Component):
     @property
     def columns_created(self) -> List[str]:
         return [
-            "x", "y", "z",
-            "vx", "vy", "vz",
-            "frozen", "freeze_time",
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "frozen",
+            "freeze_time",
             "depth",
             "parent_id",
             "path_id",
@@ -29,7 +33,7 @@ class Particle3D(Component):
         "particles": {
             "overall_max_velocity_change": 0.1,
             "initial_velocity_range": (-0.05, 0.05),
-            "terminal_velocity": 0.2,         # Maximum allowed velocity magnitude
+            "terminal_velocity": 0.2,  # Maximum allowed velocity magnitude
             "initial_circle": {"center": [1.5, 0.0, 0.5], "radius": 0.1, "n_vessels": 5},
         }
     }
@@ -63,7 +67,7 @@ class Particle3D(Component):
             a = float(config.a)
             b = float(config.b)
             c = float(config.c)
-            self.scale = np.array([a,b,c])
+            self.scale = np.array([a, b, c])
         else:
             self.scale = np.ones(3)
 
@@ -71,23 +75,20 @@ class Particle3D(Component):
         """Register pipelines for force components and total magnitude."""
         # Register individual force component pipelines
         self.force_x = builder.value.register_value_producer(
-            "particle.force.x",
-            source=lambda index: pd.Series(0.0, index=index)
+            "particle.force.x", source=lambda index: pd.Series(0.0, index=index)
         )
         self.force_y = builder.value.register_value_producer(
-            "particle.force.y",
-            source=lambda index: pd.Series(0.0, index=index)
+            "particle.force.y", source=lambda index: pd.Series(0.0, index=index)
         )
         self.force_z = builder.value.register_value_producer(
-            "particle.force.z",
-            source=lambda index: pd.Series(0.0, index=index)
+            "particle.force.z", source=lambda index: pd.Series(0.0, index=index)
         )
 
         # Register total force magnitude pipeline
         self.force_magnitude = builder.value.register_value_producer(
             "particle.force.magnitude",
             source=self.get_force_magnitude,
-            requires_values=['particle.force.x', 'particle.force.y', 'particle.force.z']
+            requires_values=["particle.force.x", "particle.force.y", "particle.force.z"],
         )
 
     def get_force_magnitude(self, index: pd.Index) -> pd.Series:
@@ -102,14 +103,18 @@ class Particle3D(Component):
         pop = pd.DataFrame(index=simulant_data.index)
 
         # Generate 3D normal points using ppf (inverse CDF)
-        points = np.column_stack([
-            norm.ppf(self.randomness.get_draw(pop.index, additional_key=f'xyz_{i}'))
-            for i in range(3)
-        ])
-    
+        points = np.column_stack(
+            [
+                norm.ppf(self.randomness.get_draw(pop.index, additional_key=f"xyz_{i}"))
+                for i in range(3)
+            ]
+        )
+
         # Normalize and scale by random radius
         points /= np.linalg.norm(points, axis=1)[:, np.newaxis]
-        radii = np.array(self.randomness.get_draw(pop.index, additional_key='radius'))**(1/3)
+        radii = np.array(self.randomness.get_draw(pop.index, additional_key="radius")) ** (
+            1 / 3
+        )
         points *= radii[:, np.newaxis]
         pop[["x", "y", "z"]] = points * self.scale
 
@@ -150,7 +155,9 @@ class Particle3D(Component):
                     center[2],
                 ]
                 pop.loc[i, "path_id"] = i
-                pop.loc[i, ["vz"]] = [0,]
+                pop.loc[i, ["vz"]] = [
+                    0,
+                ]
 
     def on_time_step(self, event: Event) -> None:
         """Update positions and velocities of non-frozen particles and track blocking forces."""
@@ -177,8 +184,13 @@ class Particle3D(Component):
         # Update velocities with random changes and forces
         for i, (v, f) in enumerate(zip(["vx", "vy", "vz"], [fx, fy, fz])):
             # Random velocity change
-            dv = (self.randomness.get_draw(particles.index, additional_key=f"d{v}") - 0.5) * 2 * max_velocity_change * self.scale[i]
-            
+            dv = (
+                (self.randomness.get_draw(particles.index, additional_key=f"d{v}") - 0.5)
+                * 2
+                * max_velocity_change
+                * self.scale[i]
+            )
+
             # Add force contribution to velocity
             particles.loc[:, v] += (dv + f) * self.step_size
 
@@ -186,7 +198,7 @@ class Particle3D(Component):
         velocity_vectors = particles[["vx", "vy", "vz"]].to_numpy() / self.scale
         velocities_magnitude = np.linalg.norm(velocity_vectors, axis=1)
         over_limit = velocities_magnitude > self.terminal_velocity
-        
+
         if np.any(over_limit):
             # Scale down velocity components to satisfy terminal velocity
             scale_factors = self.terminal_velocity / velocities_magnitude[over_limit]
@@ -208,10 +220,17 @@ class PathFreezer(Component):
     @property
     def columns_required(self) -> List[str]:
         return [
-            "x", "y", "z",
-            "vx", "vy", "vz",
-            "frozen", "freeze_time", "depth",
-            "parent_id", "path_id",
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "frozen",
+            "freeze_time",
+            "depth",
+            "parent_id",
+            "path_id",
         ]
 
     def setup(self, builder: Builder) -> None:
@@ -254,14 +273,16 @@ class PathFreezer(Component):
             positions = pop
 
         return self._current_tree.query_ball_point(positions, radius)
-    
+
     def nearest_index(self, near_list):
-        nearest_frozen_indices = [self._current_frozen.index[indices[0]] for indices in near_list]
+        nearest_frozen_indices = [
+            self._current_frozen.index[indices[0]] for indices in near_list
+        ]
         return nearest_frozen_indices
 
     def get_population(self, indices: List[int]) -> pd.DataFrame:
         pos = self._current_frozen.reindex(indices)
-        pos = pos.dropna(how='all')
+        pos = pos.dropna(how="all")
         return pos
 
     def freeze_particles(self, pop: pd.DataFrame) -> None:
@@ -272,7 +293,7 @@ class PathFreezer(Component):
 
         available = pop[~pop.frozen & (pop.path_id < 0)]
         if len(available) >= len(active):
-            to_freeze = available.iloc[:len(active)]
+            to_freeze = available.iloc[: len(active)]
 
             to_freeze = to_freeze.assign(
                 x=active.x.values,
@@ -299,12 +320,12 @@ class PathExtinction(Component):
 
     CONFIGURATION_DEFAULTS = {
         "path_extinction": {
-            "extinction_start_time": "2020-01-01", 
+            "extinction_start_time": "2020-01-01",
             "extinction_end_time": "2020-12-31",
             "initial_freeze_probability": 0.0,
             "final_freeze_probability": 0.3,
             "check_interval": 5,
-            "force_threshold": 10.0  # Force magnitude threshold for extinction
+            "force_threshold": 10.0,  # Force magnitude threshold for extinction
         }
     }
 
@@ -319,18 +340,18 @@ class PathExtinction(Component):
         self.p_start = self.config.initial_freeze_probability
         self.p_end = self.config.final_freeze_probability
         self.force_threshold = self.config.force_threshold
-        
+
         self.clock = builder.time.clock()
         self.step_count = 0
         self.randomness = builder.randomness.get_stream("path_extinction")
-        
+
         # Get the force magnitude pipeline
         self.force_magnitude = builder.value.get_value("particle.force.magnitude")
 
     def get_current_freeze_probability(self) -> float:
         """Calculate current freeze probability based on time."""
         current_time = self.clock()
-        
+
         if current_time < self.start_time:
             return self.p_start
         elif current_time > self.end_time:
@@ -342,13 +363,13 @@ class PathExtinction(Component):
     def on_time_step(self, event: Event) -> None:
         """Check for path freezing based on time and force magnitude."""
         self.step_count += 1
-        
+
         if self.step_count % self.config.check_interval != 0:
             return
 
         pop = self.population_view.get(event.index)
         active = pop[~pop.frozen & (pop.path_id >= 0)]
-        
+
         if active.empty:
             return
 
@@ -357,12 +378,13 @@ class PathExtinction(Component):
 
         p_freeze = p_freeze_mean * forces / forces.sum()
         to_freeze = active[self.randomness.get_draw(active.index) < p_freeze]
-        
+
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
             to_freeze.loc[:, "freeze_time"] = self.clock()
             to_freeze.loc[:, "path_id"] = -1  # Mark as end of path
             self.population_view.update(to_freeze)
+
 
 class PathSplitter(Component):
     """Component for splitting particle paths into two branches."""
@@ -378,16 +400,23 @@ class PathSplitter(Component):
     @property
     def columns_required(self) -> List[str]:
         return [
-            "x", "y", "z",
-            "vx", "vy", "vz",
-            "frozen", "freeze_time", "depth",
-            "parent_id", "path_id",
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "frozen",
+            "freeze_time",
+            "depth",
+            "parent_id",
+            "path_id",
         ]
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_splitter
         self.step_count = 80
-        self.next_path_id = builder.configuration.particles.initial_circle.n_vessels+1
+        self.next_path_id = builder.configuration.particles.initial_circle.n_vessels + 1
         self.step_size = builder.configuration.time.step_size
         self.randomness = builder.randomness.get_stream("path_splitter")
         self.clock = builder.time.clock()
@@ -406,7 +435,9 @@ class PathSplitter(Component):
             return
 
         # Determine which paths will split
-        to_split = self.randomness.filter_for_probability(active.index, self.config.split_probability)
+        to_split = self.randomness.filter_for_probability(
+            active.index, self.config.split_probability
+        )
         if to_split.empty:
             return
 
@@ -416,7 +447,7 @@ class PathSplitter(Component):
             return
 
         # Sample particles for new branches - two per split point
-        new_branches = available.iloc[:(2 * len(to_split))]
+        new_branches = available.iloc[: (2 * len(to_split))]
         angle_rad = np.radians(self.config.split_angle / 2)
 
         # Track updates for frozen originals and new branches
@@ -455,51 +486,66 @@ class PathSplitter(Component):
             # Freeze original particle at split point
             original_update = pd.DataFrame(
                 {
-                    'x': [original.x], 'y': [original.y], 'z': [original.z],
-                    'vx': [original.vx], 'vy': [original.vy], 'vz': [original.vz],
-                    'frozen': [True],
-                    'freeze_time': [self.clock()],
-                    'depth': [original.depth],
-                    'path_id': [original.path_id],
-                    'parent_id': [original.parent_id],
-                }, index=[orig_idx]
+                    "x": [original.x],
+                    "y": [original.y],
+                    "z": [original.z],
+                    "vx": [original.vx],
+                    "vy": [original.vy],
+                    "vz": [original.vz],
+                    "frozen": [True],
+                    "freeze_time": [self.clock()],
+                    "depth": [original.depth],
+                    "path_id": [original.path_id],
+                    "parent_id": [original.parent_id],
+                },
+                index=[orig_idx],
             )
             updates.append(original_update)
-            
+
             # Create first new branch
             new_branch_1 = pd.DataFrame(
                 {
-                    'x': [pos_1[0]], 'y': [pos_1[1]], 'z': [pos_1[2]],
-                    'vx': [new_vel_1[0]], 'vy': [new_vel_1[1]], 'vz': [new_vel_1[2]],
-                    'frozen': [False],
-                    'freeze_time': [pd.NaT],
-                    'depth': [original.depth + 1],
-                    'path_id': [self.next_path_id],
-                    'parent_id': [orig_idx],
-                }, index=[new_branches.iloc[2*idx].name]
+                    "x": [pos_1[0]],
+                    "y": [pos_1[1]],
+                    "z": [pos_1[2]],
+                    "vx": [new_vel_1[0]],
+                    "vy": [new_vel_1[1]],
+                    "vz": [new_vel_1[2]],
+                    "frozen": [False],
+                    "freeze_time": [pd.NaT],
+                    "depth": [original.depth + 1],
+                    "path_id": [self.next_path_id],
+                    "parent_id": [orig_idx],
+                },
+                index=[new_branches.iloc[2 * idx].name],
             )
             updates.append(new_branch_1)
-            
+
             # Create second new branch
             new_branch_2 = pd.DataFrame(
                 {
-                    'x': [pos_2[0]], 'y': [pos_2[1]], 'z': [pos_2[2]],
-                    'vx': [new_vel_2[0]], 'vy': [new_vel_2[1]], 'vz': [new_vel_2[2]],
-                    'frozen': [False],
-                    'freeze_time': [pd.NaT],
-                    'depth': [original.depth + 1],
-                    'path_id': [self.next_path_id + 1],
-                    'parent_id': [orig_idx],
-                }, index=[new_branches.iloc[2*idx + 1].name]
+                    "x": [pos_2[0]],
+                    "y": [pos_2[1]],
+                    "z": [pos_2[2]],
+                    "vx": [new_vel_2[0]],
+                    "vy": [new_vel_2[1]],
+                    "vz": [new_vel_2[2]],
+                    "frozen": [False],
+                    "freeze_time": [pd.NaT],
+                    "depth": [original.depth + 1],
+                    "path_id": [self.next_path_id + 1],
+                    "parent_id": [orig_idx],
+                },
+                index=[new_branches.iloc[2 * idx + 1].name],
             )
             updates.append(new_branch_2)
-            
+
             self.next_path_id += 2
 
         if updates:
             # Combine all updates with consistent dtypes
             all_updates = pd.concat(updates, axis=0)
-                        
+
             self.population_view.update(all_updates)
 
     @staticmethod
@@ -510,16 +556,18 @@ class PathSplitter(Component):
         b, c, d = -axis * np.sin(theta / 2.0)
         aa, bb, cc, dd = a * a, b * b, c * c, d * d
         bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
-        return np.array([
-            [aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
-            [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
-            [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc]
-        ])
+        return np.array(
+            [
+                [aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+                [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+                [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc],
+            ]
+        )
 
 
 class PathDLA(Component):
     """Component for freezing particles at the end of a path using DLA.
-    
+
     The near radius scales exponentially from initial_near_radius to final_near_radius
     between dla_start_time and dla_end_time.
     """
@@ -530,16 +578,21 @@ class PathDLA(Component):
             "initial_near_radius": 0.1,
             "final_near_radius": 0.01,
             "dla_start_time": "2000-01-01",  # Start time for DLA freezing
-            "dla_end_time": "2001-01-01",    # End time for radius scaling
+            "dla_end_time": "2001-01-01",  # End time for radius scaling
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
         return [
-            "x", "y", "z",
-            "frozen", "freeze_time", "depth",
-            "path_id", "parent_id",
+            "x",
+            "y",
+            "z",
+            "frozen",
+            "freeze_time",
+            "depth",
+            "path_id",
+            "parent_id",
         ]
 
     def setup(self, builder: Builder) -> None:
@@ -552,35 +605,40 @@ class PathDLA(Component):
         # Convert times to pandas Timestamps
         self.dla_start_time = pd.Timestamp(self.config.dla_start_time)
         self.dla_end_time = pd.Timestamp(self.config.dla_end_time)
-        
+
         # Validate configuration
         if self.dla_end_time <= self.dla_start_time:
             raise ValueError("dla_end_time must be after dla_start_time")
-        
+
         if self.config.initial_near_radius <= 0 or self.config.final_near_radius <= 0:
             raise ValueError("near radius values must be positive")
-            
+
         if self.config.final_near_radius > self.config.initial_near_radius:
             raise ValueError("final_near_radius must be smaller than initial_near_radius")
-            
+
         # Calculate decay rate for exponential scaling
         total_time = (self.dla_end_time - self.dla_start_time).total_seconds()
-        self.decay_rate = -np.log(self.config.final_near_radius / self.config.initial_near_radius) / total_time
+        self.decay_rate = (
+            -np.log(self.config.final_near_radius / self.config.initial_near_radius)
+            / total_time
+        )
 
     def get_current_near_radius(self) -> float:
         """Calculate the current near radius based on exponential decay."""
         current_time = self.clock()
-        
+
         if current_time < self.dla_start_time:
             return self.config.initial_near_radius
         elif current_time > self.dla_end_time:
             return self.config.final_near_radius
-        
+
         # Calculate time since start
         time_elapsed = (current_time - self.dla_start_time).total_seconds()
-        
+
         # Calculate exponentially decayed radius
-        current_radius = self.config.initial_near_radius * np.exp(-self.decay_rate * time_elapsed)
+        current_radius = self.config.initial_near_radius * np.exp(
+            -self.decay_rate * time_elapsed
+        )
         return current_radius
 
     def on_time_step(self, event: Event) -> None:
@@ -602,24 +660,24 @@ class PathDLA(Component):
         if not_frozen.empty:
             return
 
-        near_frozen_indices = self.freezer.query_radius(
-            not_frozen, self.near_radius
-        )
+        near_frozen_indices = self.freezer.query_radius(not_frozen, self.near_radius)
         # FIXME: should only use particles with path_id < 0 (i.e. in frozen DataFrame, not all in freezer object )
         near_particles = np.array([len(indices) > 0 for indices in near_frozen_indices])
         stickiness_probabilities = self.randomness.get_draw(
             not_frozen.index, additional_key="stickiness"
         )
-        
+
         freeze_condition = stickiness_probabilities < self.config.stickiness
         freeze_mask = near_particles & freeze_condition
 
         to_freeze = not_frozen[freeze_mask].copy()
         if not to_freeze.empty:
-            to_freeze["parent_id"] = self.freezer.nearest_index(near_frozen_indices[freeze_mask])
+            to_freeze["parent_id"] = self.freezer.nearest_index(
+                near_frozen_indices[freeze_mask]
+            )
             to_freeze["path_id"] = -1
             to_freeze["depth"] = 1000
             to_freeze["frozen"] = True
             to_freeze["freeze_time"] = self.clock()
-            
+
             self.population_view.update(to_freeze)

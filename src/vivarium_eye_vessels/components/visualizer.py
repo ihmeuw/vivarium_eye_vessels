@@ -36,7 +36,19 @@ class ParticleVisualizer3D(Component):
 
     @property
     def columns_required(self) -> List[str]:
-        return ["x", "y", "z", "vx", "vy", "vz", "frozen", "freeze_time", "depth", "parent_id", "path_id"]
+        return [
+            "x",
+            "y",
+            "z",
+            "vx",
+            "vy",
+            "vz",
+            "frozen",
+            "freeze_time",
+            "depth",
+            "parent_id",
+            "path_id",
+        ]
 
     def setup(self, builder: Builder):
         pygame.init()
@@ -90,68 +102,68 @@ class ParticleVisualizer3D(Component):
         self.particle_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
         self.connection_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
 
-        self.force_x = builder.value.get_value('particle.force.x')
-        self.force_y = builder.value.get_value('particle.force.y')
-        self.force_z = builder.value.get_value('particle.force.z')
+        self.force_x = builder.value.get_value("particle.force.x")
+        self.force_y = builder.value.get_value("particle.force.y")
+        self.force_z = builder.value.get_value("particle.force.z")
 
     def on_simulation_end(self, event: Event) -> None:
-            """Keep the visualization window open until user exits.
+        """Keep the visualization window open until user exits.
 
-            Parameters
-            ----------
-            event : Event
-                The event that triggered the function call.
-            """
-            population = self.population_view.get(event.index)
-            
-            # Draw one final frame
-            self.screen.fill(self.config["background_color"])
-            
-            # Calculate rotation matrix for final frame
-            cy, sy = np.cos(self.y_rotation), np.sin(self.y_rotation)
-            cx, sx = np.cos(self.x_rotation), np.sin(self.x_rotation)
-            cz, sz = np.cos(self.z_rotation), np.sin(self.z_rotation)
-            
-            y_rotation_matrix = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
-            x_rotation_matrix = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
-            z_rotation_matrix = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
-            
-            rotation_matrix = z_rotation_matrix @ x_rotation_matrix @ y_rotation_matrix
-            
-            # Project points and prepare colors
-            points = population[["x", "y", "z"]].values
-            screen_points, mask = self._project_points(points, rotation_matrix)
-            
-            colors = np.where(
-                population["frozen"].values[:, np.newaxis],
-                self.config["frozen_color"],
-                self.config["particle_color"]
-            )
-            
-            # Clear surfaces
-            self.connection_surface.fill((0, 0, 0, 0))
-            self.particle_surface.fill((0, 0, 0, 0))
-            
-            # Draw final state
-            self._draw_connections(population, screen_points, mask, self.connection_surface)
-            self._draw_particles(screen_points, colors, mask, self.particle_surface)
-            self.screen.blit(self.connection_surface, (0, 0))
-            self.screen.blit(self.particle_surface, (0, 0))
-            
-            # Draw additional elements
-            if self.has_ellipsoid:
-                self._draw_ellipsoid(rotation_matrix)
-            if self.has_cylinder:
-                self._draw_cylinder(rotation_matrix)
-            
-            self._draw_axes(rotation_matrix)
-            self._draw_progress_bar()
-            self._draw_fps()
-            self._draw_controls_help()
-            
-            pygame.display.flip()
-            
-            self._wait_for_exit()
+        Parameters
+        ----------
+        event : Event
+            The event that triggered the function call.
+        """
+        population = self.population_view.get(event.index)
+
+        # Draw one final frame
+        self.screen.fill(self.config["background_color"])
+
+        # Calculate rotation matrix for final frame
+        cy, sy = np.cos(self.y_rotation), np.sin(self.y_rotation)
+        cx, sx = np.cos(self.x_rotation), np.sin(self.x_rotation)
+        cz, sz = np.cos(self.z_rotation), np.sin(self.z_rotation)
+
+        y_rotation_matrix = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+        x_rotation_matrix = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+        z_rotation_matrix = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+
+        rotation_matrix = z_rotation_matrix @ x_rotation_matrix @ y_rotation_matrix
+
+        # Project points and prepare colors
+        points = population[["x", "y", "z"]].values
+        screen_points, mask = self._project_points(points, rotation_matrix)
+
+        colors = np.where(
+            population["frozen"].values[:, np.newaxis],
+            self.config["frozen_color"],
+            self.config["particle_color"],
+        )
+
+        # Clear surfaces
+        self.connection_surface.fill((0, 0, 0, 0))
+        self.particle_surface.fill((0, 0, 0, 0))
+
+        # Draw final state
+        self._draw_connections(population, screen_points, mask, self.connection_surface)
+        self._draw_particles(screen_points, colors, mask, self.particle_surface)
+        self.screen.blit(self.connection_surface, (0, 0))
+        self.screen.blit(self.particle_surface, (0, 0))
+
+        # Draw additional elements
+        if self.has_ellipsoid:
+            self._draw_ellipsoid(rotation_matrix)
+        if self.has_cylinder:
+            self._draw_cylinder(rotation_matrix)
+
+        self._draw_axes(rotation_matrix)
+        self._draw_progress_bar()
+        self._draw_fps()
+        self._draw_controls_help()
+
+        pygame.display.flip()
+
+        self._wait_for_exit()
 
     def _wait_for_exit(self) -> None:
         """Run an event loop until the user exits."""
@@ -159,7 +171,8 @@ class ParticleVisualizer3D(Component):
         while running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or (
-                    event.type == pygame.KEYDOWN and event.key in [pygame.K_ESCAPE, pygame.K_q]
+                    event.type == pygame.KEYDOWN
+                    and event.key in [pygame.K_ESCAPE, pygame.K_q]
                 ):
                     running = False
                     pygame.quit()
@@ -418,22 +431,22 @@ class ParticleVisualizer3D(Component):
         screen_points, mask = self._project_points(points, rotation_matrix)
 
         current_time = self.clock()
-        frozen_time = ((current_time - population["freeze_time"]) / pd.Timedelta(days=1)).values
+        frozen_time = (
+            (current_time - population["freeze_time"]) / pd.Timedelta(days=1)
+        ).values
         frozen = population["frozen"].values
         delay = float(self.delay)
-        
+
         # Initialize with default particle color
         colors = np.full((len(population), 3), self.config["particle_color"])
-        
+
         # Set frozen particle colors
         frozen_mask = frozen
         colors[frozen_mask] = self.config["frozen_color"]
-        
+
         # Set repulsive particle colors (frozen longer than delay)
         repulsive_mask = frozen & (frozen_time > delay)
         colors[repulsive_mask] = (200, 150, 150)  # TODO: Make this a config option
-
-
 
         # Override colors for points in cylinder
         if self.has_cylinder:
@@ -614,71 +627,86 @@ class ParticleVisualizer3D(Component):
 
     def _calculate_path_widths(self, population: pd.DataFrame) -> None:
         """Calculate branching counts and path widths for all paths using optimized methods."""
-        path_widths = np.where(population["parent_id"] >= 0,
-                               np.maximum(5-population["depth"], 2),
-                               0)
+        path_widths = np.where(
+            population["parent_id"] >= 0, np.maximum(5 - population["depth"], 2), 0
+        )
 
         return path_widths
 
-    def _draw_vectors(self, population: pd.DataFrame, screen_points: np.ndarray, mask: np.ndarray, rotation_matrix: np.ndarray) -> None:
+    def _draw_vectors(
+        self,
+        population: pd.DataFrame,
+        screen_points: np.ndarray,
+        mask: np.ndarray,
+        rotation_matrix: np.ndarray,
+    ) -> None:
         """Draw force and velocity vectors for active non-frozen particles."""
         # Get only active non-frozen particles
-        active_mask = (population['path_id'] >= 0) & (~population['frozen'])
+        active_mask = (population["path_id"] >= 0) & (~population["frozen"])
         active_particles = population[active_mask]
-        
+
         if active_particles.empty:
             return
-                    
+
         # Get force components for active particles
         force_x = self.force_x(active_particles.index)
         force_y = self.force_y(active_particles.index)
         force_z = self.force_z(active_particles.index)
-        
+
         # Get velocity components directly from population
-        velocities = active_particles[['vx', 'vy', 'vz']].values
+        velocities = active_particles[["vx", "vy", "vz"]].values
         forces = np.column_stack([force_x, force_y, force_z])
 
         # Calculate magnitudes
         force_magnitudes = np.linalg.norm(forces, axis=1)
         velocity_magnitudes = np.linalg.norm(velocities, axis=1)
-        
+
         # Normalize vectors by their max magnitudes and apply scaling
-        scaled_forces = 10*forces #* (force_scale / max_force_mag) if max_force_mag > 0 else forces
-        scaled_velocities = 5*velocities #* (vel_scale / max_vel_mag) if max_vel_mag > 0 else velocities
-        
+        scaled_forces = (
+            10 * forces
+        )  # * (force_scale / max_force_mag) if max_force_mag > 0 else forces
+        scaled_velocities = (
+            5 * velocities
+        )  # * (vel_scale / max_vel_mag) if max_vel_mag > 0 else velocities
+
         # Get start points for vectors (current particle positions)
         start_points = screen_points[active_mask]
         start_mask = mask[active_mask]
-        
+
         # Calculate end points for both force and velocity vectors
-        force_end_points_3d = active_particles[['x', 'y', 'z']].values + scaled_forces
-        velocity_end_points_3d = active_particles[['x', 'y', 'z']].values + scaled_velocities
-        
-        force_end_points, force_end_mask = self._project_points(force_end_points_3d, rotation_matrix)
-        velocity_end_points, velocity_end_mask = self._project_points(velocity_end_points_3d, rotation_matrix)
-        
+        force_end_points_3d = active_particles[["x", "y", "z"]].values + scaled_forces
+        velocity_end_points_3d = active_particles[["x", "y", "z"]].values + scaled_velocities
+
+        force_end_points, force_end_mask = self._project_points(
+            force_end_points_3d, rotation_matrix
+        )
+        velocity_end_points, velocity_end_mask = self._project_points(
+            velocity_end_points_3d, rotation_matrix
+        )
+
         # Draw vectors
         def draw_arrow(start, end, color, width=2):
             """Helper to draw an arrow with proportional head size"""
             if not (np.all(np.isfinite(start)) and np.all(np.isfinite(end))):
                 return
-                
+
             # Draw main line
             pygame.draw.line(self.screen, color, start, end, width)
-            
-            
+
         # Draw all vectors
-        force_color = self.config.get('force_color', (255, 255, 0))  # Yellow for forces
-        velocity_color = self.config.get('velocity_color', (0, 255, 255))  # Cyan for velocities
-        
+        force_color = self.config.get("force_color", (255, 255, 0))  # Yellow for forces
+        velocity_color = self.config.get(
+            "velocity_color", (0, 255, 255)
+        )  # Cyan for velocities
+
         visible_mask = start_mask & velocity_end_mask
-        
+
         for i in range(len(start_points)):
             if visible_mask[i]:
                 # Draw force vector (if significant)
                 if force_magnitudes[i] > 1e-6:
                     draw_arrow(start_points[i], force_end_points[i], force_color)
-                
+
                 # Draw velocity vector (if significant)
                 if velocity_magnitudes[i] > 1e-6:
                     draw_arrow(start_points[i], velocity_end_points[i], velocity_color)
