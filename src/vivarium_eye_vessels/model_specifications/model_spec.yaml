@@ -25,7 +25,7 @@ configuration:
             day: 1
         step_size: .05 # Days
     population:
-        population_size: 2000
+        population_size: 5000
 
     # Base particle configuration
     particles:
@@ -43,29 +43,29 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 100     # Steps between checking for splits
+        split_interval: 50     # Steps between checking for splits
         split_angle: 60         # Angle in degrees between split paths
         split_probability: .2  # Probability of eligible path splitting
 
     path_extinction:
-        check_interval: 100
-        extinction_start_time: '2025-03-01'
-        extinction_end_time: '2025-05-02'
+        check_interval: 50
+        extinction_start_time: '2025-05-01'
+        extinction_end_time: '2025-06-02'
         initial_freeze_probability: 0.2
         final_freeze_probability: 1.0
         force_threshold: 5.0
 
     path_dla:
-        dla_start_time: '2025-05-01'
+        dla_start_time: '2025-06-01'
         dla_end_time: '2025-09-01'
         stickiness: 1.0                   # Probability of sticking when near frozen particle
-        initial_near_radius: 0.05         # Distance for checking proximity to frozen particles
-        final_near_radius: 0.02           # Distance for checking proximity to frozen particles
+        initial_near_radius: 0.04         # Distance for checking proximity to frozen particles
+        final_near_radius: 0.01           # Distance for checking proximity to frozen particles
 
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.025  # Ellipsoid z semi-major axis
+        c: 0.05  # Ellipsoid z semi-major axis
         force_type: hookean
         spring_constant: 10
     

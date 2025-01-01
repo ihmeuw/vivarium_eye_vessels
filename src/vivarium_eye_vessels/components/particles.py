@@ -605,7 +605,7 @@ class PathDLA(Component):
         near_frozen_indices = self.freezer.query_radius(
             not_frozen, self.near_radius
         )
-        
+        # FIXME: should only use particles with path_id < 0 (i.e. in frozen DataFrame, not all in freezer object )
         near_particles = np.array([len(indices) > 0 for indices in near_frozen_indices])
         stickiness_probabilities = self.randomness.get_draw(
             not_frozen.index, additional_key="stickiness"
