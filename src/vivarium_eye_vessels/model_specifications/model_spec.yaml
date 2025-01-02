@@ -9,11 +9,12 @@ components:
         - boundaries.CylinderExclusion()
         - boundaries.PointRepulsion()
         - boundaries.FrozenRepulsion()
-        - visualizer.ParticleVisualizer3D()
+        # - visualizer.ParticleVisualizer3D()
+        - observers.SaveParticles()
 
 configuration:
     randomness:
-        random_seed: 123456
+        random_seed: 123457
     time:
         start:
             year: 2025
