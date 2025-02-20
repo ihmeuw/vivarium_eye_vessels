@@ -9,7 +9,7 @@ components:
         - boundaries.CylinderExclusion()
         - boundaries.PointRepulsion()
         - boundaries.FrozenRepulsion()
-        # - visualizer.ParticleVisualizer3D()
+        - visualizer.ParticleVisualizer3D()
         - observers.SaveParticles()
 
 configuration:
@@ -52,9 +52,11 @@ configuration:
         check_interval: 25
         extinction_start_time: '2025-05-01'
         extinction_end_time: '2025-06-02'
-        initial_freeze_probability: 0.2
-        final_freeze_probability: 1.0
+        initial_freeze_probability: 0.0
+        final_freeze_probability: 0.0
         force_threshold: 5.0
+        angle_threshold: 60.0
+        min_velocity_magnitude: 0.0
 
     path_dla:
         dla_start_time: '2025-06-01'
@@ -104,3 +106,5 @@ configuration:
         ellipsoid_color: [150, 0, 150]
         cylinder_color: [0, 0, 150]
         ellipsoid_points: 15  # Number of points for wireframe detail
+        screen_height: 800
+        screen_width: 1200

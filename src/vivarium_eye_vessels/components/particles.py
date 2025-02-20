@@ -310,7 +310,7 @@ class PathFreezer(Component):
 
 
 class PathExtinction(Component):
-    """Component for controlling extinction of active paths based on time and force."""
+    """Component for controlling extinction of active paths based on time, force, and sudden direction changes."""
 
     CONFIGURATION_DEFAULTS = {
         "path_extinction": {
@@ -320,12 +320,14 @@ class PathExtinction(Component):
             "final_freeze_probability": 0.3,
             "check_interval": 5,
             "force_threshold": 10.0,  # Force magnitude threshold for extinction
+            "angle_threshold": 60.0,  # Maximum allowed angle change in degrees
+            "min_velocity_magnitude": 0.01,  # Minimum velocity to check angles
         }
     }
 
     @property
     def columns_required(self) -> List[str]:
-        return ["frozen", "freeze_time", "path_id"]
+        return ["frozen", "freeze_time", "path_id", "vx", "vy", "vz"]
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_extinction
@@ -334,13 +336,19 @@ class PathExtinction(Component):
         self.p_start = self.config.initial_freeze_probability
         self.p_end = self.config.final_freeze_probability
         self.force_threshold = self.config.force_threshold
+        self.angle_threshold = self.config.angle_threshold
+        self.min_velocity = self.config.min_velocity_magnitude
+        self.step_size = builder.configuration.time.step_size
 
         self.clock = builder.time.clock()
         self.step_count = 0
         self.randomness = builder.randomness.get_stream("path_extinction")
 
-        # Get the force magnitude pipeline
+        # Get force pipelines
         self.force_magnitude = builder.value.get_value("particle.force.magnitude")
+        self.force_x = builder.value.get_value("particle.force.x")
+        self.force_y = builder.value.get_value("particle.force.y")
+        self.force_z = builder.value.get_value("particle.force.z")
 
     def get_current_freeze_probability(self) -> float:
         """Calculate current freeze probability based on time."""
@@ -354,12 +362,46 @@ class PathExtinction(Component):
             progress = (current_time - self.start_time) / (self.end_time - self.start_time)
             return self.p_start + (self.p_end - self.p_start) * progress
 
-    def on_time_step(self, event: Event) -> None:
-        """Check for path freezing based on time and force magnitude."""
-        self.step_count += 1
+    def calculate_velocity_change_angles(self, active: pd.DataFrame) -> pd.Series:
+        """Calculate angles between current velocity and predicted next velocity."""
+        # Get current velocities
+        curr_vel = active[["vx", "vy", "vz"]].values
+        curr_vel_mag = np.linalg.norm(curr_vel, axis=1)
 
-        if self.step_count % self.config.check_interval != 0:
-            return
+        # Get force vectors and magnitude
+        force_x = self.force_x(active.index)
+        force_y = self.force_y(active.index)
+        force_z = self.force_z(active.index)
+        force = np.column_stack([force_x, force_y, force_z])
+        force_mag = self.force_magnitude(active.index)
+        
+        # Calculate predicted velocity after timestep
+        # v = v0 + F*dt
+        next_vel = curr_vel + force * self.step_size
+        next_vel_mag = np.linalg.norm(next_vel, axis=1)
+        
+        # Initialize angles array
+        angles = np.zeros(len(active))
+        
+        # Only calculate angles where both velocities have sufficient magnitude
+        valid_vectors = (curr_vel_mag > self.min_velocity) & (next_vel_mag > self.min_velocity)
+        
+        if np.any(valid_vectors):
+            # Normalize vectors
+            curr_vel_norm = curr_vel[valid_vectors] / curr_vel_mag[valid_vectors, np.newaxis]
+            next_vel_norm = next_vel[valid_vectors] / next_vel_mag[valid_vectors, np.newaxis]
+            
+            # Calculate dot product and clip to handle floating point imprecision
+            dot_products = np.clip(np.sum(curr_vel_norm * next_vel_norm, axis=1), -1.0, 1.0)
+            
+            # Convert to degrees
+            angles[valid_vectors] = np.degrees(np.arccos(dot_products))
+        
+        return pd.Series(angles, index=active.index)
+
+    def on_time_step(self, event: Event) -> None:
+        """Check for path freezing based on time, force magnitude, and predicted velocity changes."""
+        self.step_count += 1
 
         pop = self.population_view.get(event.index)
         active = pop[~pop.frozen & (pop.path_id >= 0)]
@@ -367,18 +409,27 @@ class PathExtinction(Component):
         if active.empty:
             return
 
-        p_freeze_mean = self.get_current_freeze_probability()
-        forces = self.force_magnitude(active.index)
+        # Calculate angle-based freezing using predicted velocity change
+        angles = self.calculate_velocity_change_angles(active)
+        angle_freeze = angles > self.angle_threshold
 
-        p_freeze = p_freeze_mean * forces / forces.sum()
-        to_freeze = active[self.randomness.get_draw(active.index) < p_freeze]
+        if self.step_count % self.config.check_interval == 0:
+            # Calculate probability-based freezing
+            p_freeze_mean = self.get_current_freeze_probability()
+            forces = self.force_magnitude(active.index)
+            p_freeze = p_freeze_mean * forces / forces.sum()
+            prob_freeze = self.randomness.get_draw(active.index) < p_freeze
 
+            # Combine both conditions
+            to_freeze = active[angle_freeze | prob_freeze]
+        else:
+            to_freeze = active[angle_freeze]
+            
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
             to_freeze.loc[:, "freeze_time"] = self.clock()
             to_freeze.loc[:, "path_id"] = -1  # Mark as end of path
             self.population_view.update(to_freeze)
-
 
 class PathSplitter(Component):
     """Component for splitting particle paths into two branches."""
