@@ -3,8 +3,8 @@ components:
         - particles.Particle3D()
         - particles.PathFreezer()
         - particles.PathExtinction()
-        - particles.PathSplitter()
-        - particles.PathDLA()
+        # - particles.PathSplitter()
+        # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
         - boundaries.PointRepulsion()
@@ -14,7 +14,7 @@ components:
 
 configuration:
     randomness:
-        random_seed: 123456
+        random_seed: 1234567
     time:
         start:
             year: 2025
@@ -26,7 +26,7 @@ configuration:
             day: 1
         step_size: .05 # Days
     population:
-        population_size: 5000
+        population_size: 200
 
     # Base particle configuration
     particles:
@@ -36,7 +36,7 @@ configuration:
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.2                # Radius of the circle
-            n_vessels: 8               # Number of frozen particles in the circle
+            n_vessels: 3               # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -49,14 +49,7 @@ configuration:
         split_probability: .2  # Probability of eligible path splitting
 
     path_extinction:
-        check_interval: 25
-        extinction_start_time: '2025-05-01'
-        extinction_end_time: '2025-06-02'
-        initial_freeze_probability: 0.0
-        final_freeze_probability: 0.0
-        force_threshold: 5.0
-        angle_threshold: 60.0
-        min_velocity_magnitude: 0.0
+        force_threshold: 1.0
 
     path_dla:
         dla_start_time: '2025-06-01'
@@ -68,9 +61,9 @@ configuration:
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.05  # Ellipsoid z semi-major axis
+        c: 0.1  # Ellipsoid z semi-major axis
         force_type: hookean
-        spring_constant: 10
+        spring_constant: 5
     
     cylinder_exclusion:
         radius: 0.2  # Radius of the cylinder
