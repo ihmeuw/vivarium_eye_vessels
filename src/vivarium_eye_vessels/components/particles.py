@@ -457,7 +457,7 @@ class PathSplitter(Component):
                     "frozen": [True],
                     "freeze_time": [self.clock()],
                     "depth": [original.depth],
-                    "path_id": [original.path_id],
+                    "path_id": [self.next_path_id],
                     "parent_id": [original.parent_id],
                 },
                 index=[orig_idx],
@@ -476,7 +476,7 @@ class PathSplitter(Component):
                     "frozen": [False],
                     "freeze_time": [pd.NaT],
                     "depth": [original.depth],
-                    "path_id": [original.path_id],
+                    "path_id": [self.next_path_id],
                     "parent_id": [orig_idx],
                 },
                 index=[new_branches.iloc[2 * idx].name],
@@ -495,7 +495,7 @@ class PathSplitter(Component):
                     "frozen": [False],
                     "freeze_time": [pd.NaT],
                     "depth": [original.depth + 1],
-                    "path_id": [original.path_id],
+                    "path_id": [self.next_path_id],
                     "parent_id": [orig_idx],
                 },
                 index=[new_branches.iloc[2 * idx + 1].name],
@@ -622,7 +622,7 @@ class PathDLA(Component):
         Only freeze to particles with path_id < 0
         """
         #  only use particles with path_id < 0 (i.e. in frozen DataFrame, not all in freezer object )
-        frozen = pop[pop.frozen & (pop.path_id < 0)]
+        frozen = pop[pop.frozen]# & (pop.path_id < 0)]
         if frozen.empty:
             return
         self.update_tree(frozen)

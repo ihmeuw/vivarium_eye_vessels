@@ -4,7 +4,7 @@ components:
         - particles.PathFreezer()
         - particles.PathExtinction()
         - particles.PathSplitter()
-        # - particles.PathDLA()
+        - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
         - boundaries.PointRepulsion()
@@ -14,7 +14,7 @@ components:
 
 configuration:
     randomness:
-        random_seed: 1234567
+        random_seed: 12345
     time:
         start:
             year: 2025
@@ -30,36 +30,35 @@ configuration:
 
     # Base particle configuration
     particles:
-        overall_max_velocity_change: 0.1
-        initial_velocity_range: [-0.02, 0.02]
-        terminal_velocity: 0.2
+        overall_max_velocity_change: 0.05
+        initial_velocity_range: [-0.2, 0.2]
+        terminal_velocity: 0.15
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
-            radius: 0.2                # Radius of the circle
-            n_vessels: 3               # Number of frozen particles in the circle
+            radius: 0.15                # Radius of the circle
+            n_vessels: 4               # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
-        freeze_interval: 10  # Steps between freezing positions
+        freeze_interval: 5  # Steps between freezing positions
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 25     # Steps between checking for splits
+        split_interval: 30     # Steps between checking for splits
         split_angle: 60         # Angle in degrees between split paths
-        split_probability: .25  # Probability of eligible path splitting
+        split_probability: 1.0  # Probability of eligible path splitting
 
     path_extinction:
-        force_threshold: 1.0
+        force_threshold: 0.80
 
     frozen_repulsion:
         force_type: hookean
-        spring_constant: 5.0  # Spring constant for Hooke's law (force/distance)
-        interaction_radius: 0.1
-        freeze_radius: 0.03
-        delay: 2 # days
+        spring_constant: 4.0  # Spring constant for Hooke's law (force/distance)
+        interaction_radius: 0.2
+        delay: 3 # days
 
     path_dla:
-        dla_start_time: '2025-06-01'
+        dla_start_time: '2025-02-01'
         dla_end_time: '2025-09-01'
         stickiness: 1.0                   # Probability of sticking when near frozen particle
         initial_near_radius: 0.04         # Distance for checking proximity to frozen particles
@@ -67,10 +66,10 @@ configuration:
 
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
-        b: 1    # Ellipsoid y semi-major axis
+        b: 2    # Ellipsoid y semi-major axis
         c: 0.01  # Ellipsoid z semi-major axis
         force_type: hookean
-        spring_constant: 10
+        spring_constant: 3
     
     cylinder_exclusion:
         radius: 0.4  # Radius of the cylinder
@@ -78,7 +77,7 @@ configuration:
         center: [-.5, 0.0, -0.2]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
         force_type: hookean
-        spring_constant: 1  # Spring constant for Hooke's law (force/distance)
+        spring_constant: 3  # Spring constant for Hooke's law (force/distance)
         
     point_repulsion:
         position:
