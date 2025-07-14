@@ -3,7 +3,7 @@ components:
         - particles.Particle3D()
         - particles.PathFreezer()
         - particles.PathExtinction()
-        # - particles.PathSplitter()
+        - particles.PathSplitter()
         # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
@@ -26,13 +26,13 @@ configuration:
             day: 1
         step_size: .05 # Days
     population:
-        population_size: 200
+        population_size: 2000
 
     # Base particle configuration
     particles:
         overall_max_velocity_change: 0.1
         initial_velocity_range: [-0.02, 0.02]
-        terminal_velocity: 0.1
+        terminal_velocity: 0.2
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.2                # Radius of the circle
@@ -44,12 +44,19 @@ configuration:
 
     # Path splitting configuration
     path_splitter:
-        split_interval: 12     # Steps between checking for splits
-        split_angle: 30         # Angle in degrees between split paths
-        split_probability: .2  # Probability of eligible path splitting
+        split_interval: 25     # Steps between checking for splits
+        split_angle: 60         # Angle in degrees between split paths
+        split_probability: .25  # Probability of eligible path splitting
 
     path_extinction:
         force_threshold: 1.0
+
+    frozen_repulsion:
+        force_type: hookean
+        spring_constant: 5.0  # Spring constant for Hooke's law (force/distance)
+        interaction_radius: 0.1
+        freeze_radius: 0.03
+        delay: 2 # days
 
     path_dla:
         dla_start_time: '2025-06-01'
@@ -61,17 +68,17 @@ configuration:
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 1    # Ellipsoid y semi-major axis
-        c: 0.1  # Ellipsoid z semi-major axis
+        c: 0.01  # Ellipsoid z semi-major axis
         force_type: hookean
-        spring_constant: 5
+        spring_constant: 10
     
     cylinder_exclusion:
-        radius: 0.2  # Radius of the cylinder
+        radius: 0.4  # Radius of the cylinder
         height: 0.4  # Height of the cylinder
         center: [-.5, 0.0, -0.2]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
         force_type: hookean
-        spring_constant: 10  # Spring constant for Hooke's law (force/distance)
+        spring_constant: 1  # Spring constant for Hooke's law (force/distance)
         
     point_repulsion:
         position:
@@ -82,19 +89,12 @@ configuration:
         spring_constant: .5  # Spring constant for Hooke's law (force/distance)
         radius: 0.2  # Interaction radius
 
-    frozen_repulsion:
-        force_type: hookean
-        spring_constant: 1.0  # Spring constant for Hooke's law (force/distance)
-        interaction_radius: 0.2
-        freeze_radius: 0.03
-        delay: 2 # days
-
     visualization:
         background_color: [0, 0, 0]
         particle_size: 2
         rotation_speed: 0.02
         particle_color: [0, 120, 120]
-        projection_scale: 2000.0
+        projection_scale: 1000.0
         fps: 60
         ellipsoid_color: [150, 0, 150]
         cylinder_color: [0, 0, 150]

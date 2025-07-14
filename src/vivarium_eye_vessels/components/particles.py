@@ -325,6 +325,7 @@ class PathExtinction(Component):
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_extinction
         self.force_threshold = self.config.force_threshold
+        self.clock = builder.time.clock()
 
         # Get force pipelines
         self.force_magnitude = builder.value.get_value("particle.force.magnitude")
@@ -353,9 +354,8 @@ class PathSplitter(Component):
 
     CONFIGURATION_DEFAULTS = {
         "path_splitter": {
-            "split_interval": 20,
+            "split_interval": 200,
             "split_angle": 30,
-            "split_probability": 0.3,
         }
     }
 
@@ -476,7 +476,7 @@ class PathSplitter(Component):
                     "frozen": [False],
                     "freeze_time": [pd.NaT],
                     "depth": [original.depth],
-                    "path_id": [self.next_path_id],
+                    "path_id": [original.path_id],
                     "parent_id": [orig_idx],
                 },
                 index=[new_branches.iloc[2 * idx].name],
@@ -495,14 +495,14 @@ class PathSplitter(Component):
                     "frozen": [False],
                     "freeze_time": [pd.NaT],
                     "depth": [original.depth + 1],
-                    "path_id": [self.next_path_id + 1],
+                    "path_id": [original.path_id],
                     "parent_id": [orig_idx],
                 },
                 index=[new_branches.iloc[2 * idx + 1].name],
             )
             updates.append(new_branch_2)
 
-            self.next_path_id += 2
+            self.next_path_id += 1
 
         if updates:
             # Combine all updates with consistent dtypes

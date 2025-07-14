@@ -319,32 +319,6 @@ class FrozenRepulsion(BaseForceComponent):
         self.delay = float(config.delay)
         self.freezer = builder.components.get_component("path_freezer")
 
-    def on_time_step(self, event) -> None:
-        pop = self.population_view.get(event.index)
-        particles = pop.query(self.filter_str)
-
-        neighbor_lists = self.freezer.query_radius(particles, self.freeze_radius)
-        if neighbor_lists is None:
-            return
-
-        to_freeze = []
-        for i, frozen_neighbors in enumerate(neighbor_lists):
-            # Calculate displacement vectors from frozen particles
-            frozen = self.freezer.get_population(frozen_neighbors)
-            frozen = (
-                (frozen.path_id == particles.iloc[i].path_id)
-                & ((self.clock() - frozen.freeze_time) / pd.Timedelta(days=1) > self.delay)
-            ) | (frozen.path_id != particles.iloc[i].path_id)
-            if frozen.sum() > 0:
-                to_freeze.append(particles.index[i])
-
-        if len(to_freeze) > 0:
-            to_freeze = particles.loc[to_freeze]
-            to_freeze.loc[:, "frozen"] = True
-            to_freeze.loc[:, "freeze_time"] = self.clock()
-            to_freeze.loc[:, "path_id"] = -1  # Mark as end of path
-            self.population_view.update(to_freeze)
-
     def calculate_forces_vectorized(self, particles: pd.DataFrame) -> np.ndarray:
         """Calculate repulsion forces from frozen particles"""
         positions = particles[["x", "y", "z"]].to_numpy()
@@ -368,6 +342,7 @@ class FrozenRepulsion(BaseForceComponent):
                 )
                 | (frozen.path_id != particles.iloc[i].path_id)
             ]
+
             frozen_neighbor_positions = frozen[["x", "y", "z"]].to_numpy()
             displacements = positions[i] - frozen_neighbor_positions
 
