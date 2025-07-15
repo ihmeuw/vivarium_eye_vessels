@@ -16,17 +16,27 @@ class Particle3D(Component):
     @property
     def columns_created(self) -> List[str]:
         return [
+            # location 
             "x",
             "y",
             "z",
+
+            # velocity
             "vx",
             "vy",
             "vz",
+
+            # "freeze" information
+            # used to form eye vessels
             "frozen",
             "freeze_time",
+            "unfreeze_time",
             "depth",
-            "parent_id",
-            "path_id",
+
+            # addl information relevant to
+            # eye vessel structure
+            "parent_id",  # tree structure
+            "path_id",  # used to hack PathExtinction dynamics so that splits don't go extinct immediately
         ]
 
     CONFIGURATION_DEFAULTS = {
@@ -131,6 +141,7 @@ class Particle3D(Component):
         # Initialize tree-structure-related columns
         pop["frozen"] = False
         pop["freeze_time"] = pd.NaT
+        pop["unfreeze_time"] = pd.NaT
         pop["depth"] = -1
         pop["parent_id"] = -1
         pop["path_id"] = -1
@@ -375,6 +386,7 @@ class PathSplitter(Component):
             "vz",
             "frozen",
             "freeze_time",
+            "unfreeze_time",
             "depth",
             "parent_id",
             "path_id",
@@ -397,18 +409,93 @@ class PathSplitter(Component):
     def split_paths(self, pop: pd.DataFrame) -> None:
         """Split eligible paths into two branches, freezing the original particle."""
         # Get active particles that have valid path_ids
+        mode = 'split_unfrozen'
         active = pop[~pop.frozen & (pop.path_id >= 0)]
         if active.empty:
-            return
+            active_index = self.randomness.filter_for_probability(pop[pop.frozen].index, 0.01, 'active_empty')
+            mode = 'split_frozen'
+        else:
+            active_index = active.index
 
         # Determine which paths will split
         to_split = self.randomness.filter_for_probability(
-            active.index, self.config.split_probability
+            active_index, self.config.split_probability
         )
         if to_split.empty:
             return
 
         # Find available particles for new branches - need two per split
+        if mode == 'split_unfrozen':
+            updates = self.split_unfrozen(pop, to_split)
+        elif mode == 'split_frozen':
+            updates = self.split_frozen(pop, to_split)
+        else:
+            assert 0, f'mode {mode} not implemented'
+
+        if updates:
+            # Combine all updates with consistent dtypes
+            all_updates = pd.concat(updates, axis=0)
+
+            self.population_view.update(all_updates)
+
+    def split_frozen(self, pop, to_split):
+        available = pop[~pop.frozen & (pop.path_id < 0)]
+        if len(available) < len(to_split):
+            return
+        new_branches = available.iloc[:len(to_split)]
+
+        angle_rad = np.radians(90)
+        angle_rad = angle_rad * (.75 + .5*(self.randomness.get_draw(to_split, 'split_angle')))
+
+        # Track updates for frozen originals and new branches
+        updates = []
+
+        for idx, orig_idx in enumerate(to_split):
+            original = pop.loc[orig_idx]
+            vel = np.array([original.vx, original.vy, original.vz])
+            speed = np.linalg.norm(vel)
+            if speed == 0:
+                continue
+
+            # Calculate normalized velocity and perpendicular vector
+            vel_norm = vel / speed
+            perp = np.array([0, -vel_norm[2], vel_norm[1]])
+            if np.allclose(perp, 0):
+                perp = np.array([-vel_norm[1], vel_norm[0], 0])
+            perp = perp / np.linalg.norm(perp)
+
+            # Calculate new velocities for both branches
+            rot_matrix_1 = self._rotation_matrix(perp, angle_rad[orig_idx])
+            new_vel_1 = rot_matrix_1 @ vel
+
+            # Normalize new velocities for position offsets
+            new_vel_1_norm = new_vel_1 / np.linalg.norm(new_vel_1)
+
+            # Calculate offset positions
+            original_pos = np.array([original.x, original.y, original.z])
+            pos_1 = original_pos + new_vel_1_norm * speed * self.step_size
+
+            new_branch_1 = pd.DataFrame(
+                {
+                    "x": [pos_1[0]],
+                    "y": [pos_1[1]],
+                    "z": [pos_1[2]],
+                    "vx": [new_vel_1[0]],
+                    "vy": [new_vel_1[1]],
+                    "vz": [new_vel_1[2]],
+                    "frozen": [False],
+                    "freeze_time": [pd.NaT],
+                    "depth": [10],
+                    "path_id": [self.next_path_id],
+                    "parent_id": [orig_idx],
+                },
+                index=[new_branches.iloc[idx].name],
+            )
+            updates.append(new_branch_1)
+
+        return updates
+    
+    def split_unfrozen(self, pop, to_split):
         available = pop[~pop.frozen & (pop.path_id < 0)]
         if len(available) < 2 * len(to_split):
             return
@@ -423,7 +510,7 @@ class PathSplitter(Component):
         updates = []
 
         for idx, orig_idx in enumerate(to_split):
-            original = active.loc[orig_idx]
+            original = pop.loc[orig_idx]
             vel = np.array([original.vx, original.vy, original.vz])
             speed = np.linalg.norm(vel)
             if speed == 0:
@@ -510,12 +597,7 @@ class PathSplitter(Component):
             updates.append(new_branch_2)
 
             self.next_path_id += 1
-
-        if updates:
-            # Combine all updates with consistent dtypes
-            all_updates = pd.concat(updates, axis=0)
-
-            self.population_view.update(all_updates)
+        return updates
 
     @staticmethod
     def _rotation_matrix(axis: np.ndarray, theta: float) -> np.ndarray:

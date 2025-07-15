@@ -14,7 +14,7 @@ components:
 
 configuration:
     randomness:
-        random_seed: 123456
+        random_seed: 123457
     time:
         start:
             year: 2025
@@ -40,7 +40,7 @@ configuration:
 
     # Path freezing configuration    
     path_freezer:
-        freeze_interval: 1  # Steps between freezing positions
+        freeze_interval: 2  # Steps between freezing positions
 
     # Path splitting configuration
     path_splitter:
@@ -53,8 +53,8 @@ configuration:
 
     frozen_repulsion:
         force_type: hookean
-        spring_constant: 2.0  # Spring constant for Hooke's law (force/distance)
-        interaction_radius: 0.1
+        spring_constant: 1.5  # Spring constant for Hooke's law (force/distance)
+        interaction_radius: 0.15
         delay: 1 # days
 
     path_dla:
