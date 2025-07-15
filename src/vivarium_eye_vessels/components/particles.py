@@ -416,6 +416,8 @@ class PathSplitter(Component):
         # Sample particles for new branches - two per split point
         new_branches = available.iloc[: (2 * len(to_split))]
         angle_rad = np.radians(self.config.split_angle / 2)
+        angle_rad_1 = angle_rad * (.5 + (self.randomness.get_draw(to_split, 'split_angle')))
+        angle_rad_2 = angle_rad * (.5 + (self.randomness.get_draw(to_split, 'split_angle')))
 
         # Track updates for frozen originals and new branches
         updates = []
@@ -435,8 +437,8 @@ class PathSplitter(Component):
             perp = perp / np.linalg.norm(perp)
 
             # Calculate new velocities for both branches
-            rot_matrix_1 = self._rotation_matrix(perp, angle_rad)
-            rot_matrix_2 = self._rotation_matrix(perp, -angle_rad)
+            rot_matrix_1 = self._rotation_matrix(perp, angle_rad_1[orig_idx])
+            rot_matrix_2 = self._rotation_matrix(perp, -angle_rad_2[orig_idx])
             new_vel_1 = rot_matrix_1 @ vel
             new_vel_2 = rot_matrix_2 @ vel
 
