@@ -154,6 +154,11 @@ class Particle3D(Component):
                     center[1] + radius * np.sin(angle),
                     center[2],
                 ]
+                pop.loc[i, ["vx", "vy", "vz"]] = [
+                    radius * np.cos(angle),
+                    radius * np.sin(angle),
+                    0.0,
+                ]
                 pop.loc[i, "path_id"] = i
                 pop.loc[i, ["vz"]] = [
                     0,
@@ -645,9 +650,9 @@ class PathDLA(Component):
             to_freeze["parent_id"] = frozen.index[
                 [indices[0] for indices in near_frozen_indices[freeze_mask]]
             ]
-            to_freeze["path_id"] = -1
+            to_freeze["path_id"] = 1
             to_freeze["depth"] = 1000
-            to_freeze["frozen"] = True
-            to_freeze["freeze_time"] = self.clock()
+            to_freeze["frozen"] = False
+            to_freeze["freeze_time"] = pd.NaT#self.clock()
 
             self.population_view.update(to_freeze)

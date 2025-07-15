@@ -4,7 +4,7 @@ components:
         - particles.PathFreezer()
         - particles.PathExtinction()
         - particles.PathSplitter()
-        - particles.PathDLA()
+        # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
         - boundaries.PointRepulsion()
@@ -14,7 +14,7 @@ components:
 
 configuration:
     randomness:
-        random_seed: 12345
+        random_seed: 123456
     time:
         start:
             year: 2025
@@ -26,21 +26,21 @@ configuration:
             day: 1
         step_size: .05 # Days
     population:
-        population_size: 2000
+        population_size: 5000
 
     # Base particle configuration
     particles:
-        overall_max_velocity_change: 0.05
+        overall_max_velocity_change: 0.2
         initial_velocity_range: [-0.2, 0.2]
         terminal_velocity: 0.15
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
             radius: 0.15                # Radius of the circle
-            n_vessels: 4               # Number of frozen particles in the circle
+            n_vessels: 5               # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
-        freeze_interval: 5  # Steps between freezing positions
+        freeze_interval: 1  # Steps between freezing positions
 
     # Path splitting configuration
     path_splitter:
@@ -49,13 +49,13 @@ configuration:
         split_probability: 1.0  # Probability of eligible path splitting
 
     path_extinction:
-        force_threshold: 0.80
+        force_threshold: 0.85
 
     frozen_repulsion:
         force_type: hookean
-        spring_constant: 4.0  # Spring constant for Hooke's law (force/distance)
-        interaction_radius: 0.2
-        delay: 3 # days
+        spring_constant: 2.0  # Spring constant for Hooke's law (force/distance)
+        interaction_radius: 0.1
+        delay: 1 # days
 
     path_dla:
         dla_start_time: '2025-02-01'
@@ -67,7 +67,7 @@ configuration:
     ellipsoid_containment:
         a: 2    # Ellipsoid x semi-major axis
         b: 2    # Ellipsoid y semi-major axis
-        c: 0.01  # Ellipsoid z semi-major axis
+        c: 0.1  # Ellipsoid z semi-major axis
         force_type: hookean
         spring_constant: 3
     
