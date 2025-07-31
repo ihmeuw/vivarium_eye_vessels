@@ -26,7 +26,7 @@ configuration:
             day: 1
         step_size: .05 # Days
     population:
-        population_size: 5000
+        population_size: 500
 
     # Base particle configuration
     particles:
@@ -35,8 +35,8 @@ configuration:
         terminal_velocity: 0.15
         initial_circle:
             center: [1.0, 0.0, 0.0]    # Center of the frozen circle
-            radius: 0.15                # Radius of the circle
-            n_vessels: 5               # Number of frozen particles in the circle
+            radius: 0.05                # Radius of the circle
+            n_vessels: 4               # Number of frozen particles in the circle
 
     # Path freezing configuration    
     path_freezer:
@@ -46,7 +46,7 @@ configuration:
     path_splitter:
         split_interval: 30     # Steps between checking for splits
         split_angle: 60         # Angle in degrees between split paths
-        split_probability: 1.0  # Probability of eligible path splitting
+        split_probability: 0.5  # Probability of eligible path splitting
 
     path_extinction:
         force_threshold: 0.85
@@ -74,7 +74,7 @@ configuration:
     cylinder_exclusion:
         radius: 0.4  # Radius of the cylinder
         height: 0.4  # Height of the cylinder
-        center: [-.5, 0.0, -0.2]  # Center of the cylinder
+        center: [-.05, 0.0, -0.2]  # Center of the cylinder
         direction: [0.0, 0.0, 1.0]  # Direction vector of the cylinder (default along z-axis)
         force_type: hookean
         spring_constant: 3  # Spring constant for Hooke's law (force/distance)

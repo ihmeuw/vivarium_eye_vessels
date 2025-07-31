@@ -251,11 +251,17 @@ class PathFreezer(Component):
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_freezer
+        self.particles_to_add = builder.configuration.population.population_size
         self.step_count = 0
         self.clock = builder.time.clock()
 
         self._current_tree = None
         self._current_frozen = None
+        self.simulant_creator = builder.population.get_simulant_creator()
+
+    def add_particles(self):
+        self.simulant_creator(self.particles_to_add)        
+        
 
     def on_time_step(self, event: Event) -> None:
         self.step_count += 1
@@ -324,6 +330,10 @@ class PathFreezer(Component):
         active.loc[:, "freeze_time"] = self.clock()
         self.population_view.update(active)
 
+        if len(available) < len(active)*3:
+            self.add_particles()
+        
+
 
 class PathExtinction(Component):
     """Component for controlling extinction of active paths based force."""
@@ -372,6 +382,7 @@ class PathSplitter(Component):
         "path_splitter": {
             "split_interval": 200,
             "split_angle": 30,
+            "split_probability": 0.5,
         }
     }
 
@@ -394,11 +405,17 @@ class PathSplitter(Component):
 
     def setup(self, builder: Builder) -> None:
         self.config = builder.configuration.path_splitter
-        self.step_count = 80
+        self.particles_to_add = builder.configuration.population.population_size
+        self.step_count = 0
         self.next_path_id = builder.configuration.particles.initial_circle.n_vessels + 1
         self.step_size = builder.configuration.time.step_size
         self.randomness = builder.randomness.get_stream("path_splitter")
         self.clock = builder.time.clock()
+        self.simulant_creator = builder.population.get_simulant_creator()
+
+    def add_particles(self):
+        self.simulant_creator(self.particles_to_add)        
+        
 
     def on_time_step(self, event: Event) -> None:
         self.step_count += 1
@@ -441,10 +458,12 @@ class PathSplitter(Component):
     def split_frozen(self, pop, to_split):
         available = pop[~pop.frozen & (pop.path_id < 0)]
         if len(available) < len(to_split):
+            self.add_particles()
             return
+        
         new_branches = available.iloc[:len(to_split)]
 
-        angle_rad = np.radians(90)
+        angle_rad = np.radians(90) * self.randomness.choice(to_split, [-1,1], [0.5, 0.5], 'split_direction')
         angle_rad = angle_rad * (.75 + .5*(self.randomness.get_draw(to_split, 'split_angle')))
 
         # Track updates for frozen originals and new branches
@@ -498,8 +517,9 @@ class PathSplitter(Component):
     def split_unfrozen(self, pop, to_split):
         available = pop[~pop.frozen & (pop.path_id < 0)]
         if len(available) < 2 * len(to_split):
+            self.add_particles()
             return
-
+        
         # Sample particles for new branches - two per split point
         new_branches = available.iloc[: (2 * len(to_split))]
         angle_rad = np.radians(self.config.split_angle / 2)
