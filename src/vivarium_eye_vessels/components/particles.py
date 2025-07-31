@@ -504,7 +504,7 @@ class PathSplitter(Component):
                     "vz": [new_vel_1[2]],
                     "frozen": [False],
                     "freeze_time": [pd.NaT],
-                    "depth": [10],
+                    "depth": [original.depth+1],
                     "path_id": [self.next_path_id],
                     "parent_id": [orig_idx],
                 },

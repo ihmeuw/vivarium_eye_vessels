@@ -46,7 +46,7 @@ configuration:
     path_splitter:
         split_interval: 30     # Steps between checking for splits
         split_angle: 60         # Angle in degrees between split paths
-        split_probability: 0.5  # Probability of eligible path splitting
+        split_probability: 0.75  # Probability of eligible path splitting
 
     path_extinction:
         force_threshold: 0.85
