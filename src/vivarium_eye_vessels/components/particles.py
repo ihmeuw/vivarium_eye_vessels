@@ -16,23 +16,20 @@ class Particle3D(Component):
     @property
     def columns_created(self) -> List[str]:
         return [
-            # location 
+            # location
             "x",
             "y",
             "z",
-
             # velocity
             "vx",
             "vy",
             "vz",
-
             # "freeze" information
             # used to form eye vessels
             "frozen",
             "freeze_time",
             "unfreeze_time",
             "depth",
-
             # addl information relevant to
             # eye vessel structure
             "parent_id",  # tree structure
@@ -260,8 +257,7 @@ class PathFreezer(Component):
         self.simulant_creator = builder.population.get_simulant_creator()
 
     def add_particles(self):
-        self.simulant_creator(self.particles_to_add)        
-        
+        self.simulant_creator(self.particles_to_add)
 
     def on_time_step(self, event: Event) -> None:
         self.step_count += 1
@@ -330,9 +326,8 @@ class PathFreezer(Component):
         active.loc[:, "freeze_time"] = self.clock()
         self.population_view.update(active)
 
-        if len(available) < len(active)*3:
+        if len(available) < len(active) * 3:
             self.add_particles()
-        
 
 
 class PathExtinction(Component):
@@ -367,13 +362,14 @@ class PathExtinction(Component):
             return
 
         force_values = self.force_magnitude(active.index)
-        to_freeze = active[force_values > self.force_threshold]        
+        to_freeze = active[force_values > self.force_threshold]
 
         if not to_freeze.empty:
             to_freeze.loc[:, "frozen"] = True
             to_freeze.loc[:, "freeze_time"] = self.clock()
             to_freeze.loc[:, "path_id"] = -1  # Mark as end of path
             self.population_view.update(to_freeze)
+
 
 class PathSplitter(Component):
     """Component for splitting particle paths into two branches."""
@@ -414,8 +410,7 @@ class PathSplitter(Component):
         self.simulant_creator = builder.population.get_simulant_creator()
 
     def add_particles(self):
-        self.simulant_creator(self.particles_to_add)        
-        
+        self.simulant_creator(self.particles_to_add)
 
     def on_time_step(self, event: Event) -> None:
         self.step_count += 1
@@ -426,11 +421,13 @@ class PathSplitter(Component):
     def split_paths(self, pop: pd.DataFrame) -> None:
         """Split eligible paths into two branches, freezing the original particle."""
         # Get active particles that have valid path_ids
-        mode = 'split_unfrozen'
+        mode = "split_unfrozen"
         active = pop[~pop.frozen & (pop.path_id >= 0)]
         if active.empty:
-            active_index = self.randomness.filter_for_probability(pop[pop.frozen].index, 0.01, 'active_empty')
-            mode = 'split_frozen'
+            active_index = self.randomness.filter_for_probability(
+                pop[pop.frozen].index, 0.01, "active_empty"
+            )
+            mode = "split_frozen"
         else:
             active_index = active.index
 
@@ -442,12 +439,12 @@ class PathSplitter(Component):
             return
 
         # Find available particles for new branches - need two per split
-        if mode == 'split_unfrozen':
+        if mode == "split_unfrozen":
             updates = self.split_unfrozen(pop, to_split)
-        elif mode == 'split_frozen':
+        elif mode == "split_frozen":
             updates = self.split_frozen(pop, to_split)
         else:
-            assert 0, f'mode {mode} not implemented'
+            assert 0, f"mode {mode} not implemented"
 
         if updates:
             # Combine all updates with consistent dtypes
@@ -460,11 +457,15 @@ class PathSplitter(Component):
         if len(available) < len(to_split):
             self.add_particles()
             return
-        
-        new_branches = available.iloc[:len(to_split)]
 
-        angle_rad = np.radians(90) * self.randomness.choice(to_split, [-1,1], [0.5, 0.5], 'split_direction')
-        angle_rad = angle_rad * (.75 + .5*(self.randomness.get_draw(to_split, 'split_angle')))
+        new_branches = available.iloc[: len(to_split)]
+
+        angle_rad = np.radians(90) * self.randomness.choice(
+            to_split, [-1, 1], [0.5, 0.5], "split_direction"
+        )
+        angle_rad = angle_rad * (
+            0.75 + 0.5 * (self.randomness.get_draw(to_split, "split_angle"))
+        )
 
         # Track updates for frozen originals and new branches
         updates = []
@@ -504,7 +505,7 @@ class PathSplitter(Component):
                     "vz": [new_vel_1[2]],
                     "frozen": [False],
                     "freeze_time": [pd.NaT],
-                    "depth": [original.depth+1],
+                    "depth": [original.depth + 1],
                     "path_id": [self.next_path_id],
                     "parent_id": [orig_idx],
                 },
@@ -513,18 +514,18 @@ class PathSplitter(Component):
             updates.append(new_branch_1)
 
         return updates
-    
+
     def split_unfrozen(self, pop, to_split):
         available = pop[~pop.frozen & (pop.path_id < 0)]
         if len(available) < 2 * len(to_split):
             self.add_particles()
             return
-        
+
         # Sample particles for new branches - two per split point
         new_branches = available.iloc[: (2 * len(to_split))]
         angle_rad = np.radians(self.config.split_angle / 2)
-        angle_rad_1 = angle_rad * (.5 + (self.randomness.get_draw(to_split, 'split_angle')))
-        angle_rad_2 = angle_rad * (.5 + (self.randomness.get_draw(to_split, 'split_angle')))
+        angle_rad_1 = angle_rad * (0.5 + (self.randomness.get_draw(to_split, "split_angle")))
+        angle_rad_2 = angle_rad * (0.5 + (self.randomness.get_draw(to_split, "split_angle")))
 
         # Track updates for frozen originals and new branches
         updates = []
@@ -731,7 +732,7 @@ class PathDLA(Component):
         Only freeze to particles with path_id < 0
         """
         #  only use particles with path_id < 0 (i.e. in frozen DataFrame, not all in freezer object )
-        frozen = pop[pop.frozen]# & (pop.path_id < 0)]
+        frozen = pop[pop.frozen]  # & (pop.path_id < 0)]
         if frozen.empty:
             return
         self.update_tree(frozen)
@@ -739,8 +740,10 @@ class PathDLA(Component):
         not_frozen = pop[~pop.frozen & (pop.path_id < 0)]
         if not_frozen.empty:
             return
-        
-        near_frozen_indices = self._current_tree.query_ball_point(not_frozen[["x", "y", "z"]].values, self.near_radius)
+
+        near_frozen_indices = self._current_tree.query_ball_point(
+            not_frozen[["x", "y", "z"]].values, self.near_radius
+        )
         near_particles = np.array([len(indices) > 0 for indices in near_frozen_indices])
         stickiness_probabilities = self.randomness.get_draw(
             not_frozen.index, additional_key="stickiness"
@@ -757,6 +760,6 @@ class PathDLA(Component):
             to_freeze["path_id"] = 1
             to_freeze["depth"] = 1000
             to_freeze["frozen"] = False
-            to_freeze["freeze_time"] = pd.NaT#self.clock()
+            to_freeze["freeze_time"] = pd.NaT  # self.clock()
 
             self.population_view.update(to_freeze)
