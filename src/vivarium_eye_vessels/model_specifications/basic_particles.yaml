@@ -1,0 +1,52 @@
+components:
+    vivarium_eye_vessels.components:
+        - particles.Particle3D()
+        - boundaries.EllipsoidContainment()
+        - visualizer.ParticleVisualizer3D()
+
+configuration:
+    randomness:
+        random_seed: 123456
+    time:
+        start:
+            year: 2025
+            month: 1
+            day: 1
+        end:
+            year: 2025
+            month: 1
+            day: 2
+        step_size: 0.1 # Days
+    population:
+        population_size: 100
+
+    # Basic particle configuration - just moving particles
+    particles:
+        overall_max_velocity_change: 0.3
+        initial_velocity_range: [-0.3, 0.3]
+        terminal_velocity: 0.2
+        initial_circle:
+            center: [0.0, 0.0, 0.0]    # Center of initial particle distribution
+            radius: 0.5                 # Radius for initial particle spread
+            n_vessels: 0               # No frozen particles initially
+
+    # Containment boundary
+    ellipsoid_containment:
+        a: 2    # Ellipsoid x semi-major axis
+        b: 2    # Ellipsoid y semi-major axis
+        c: 2    # Ellipsoid z semi-major axis
+        force_type: hookean
+        spring_constant: 2
+
+    # Visualization settings for 3D display
+    visualization:
+        background_color: [0, 0, 0]
+        particle_size: 3
+        rotation_speed: 0.02
+        particle_color: [0, 255, 255]
+        projection_scale: 1000.0
+        fps: 60
+        ellipsoid_color: [150, 150, 150]
+        ellipsoid_points: 20
+        screen_height: 800
+        screen_width: 1200

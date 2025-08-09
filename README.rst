@@ -2,10 +2,63 @@
 vivarium_eye_vessels
 ===============================
 
-Vivarium simulation model for the vivarium_eye_vessels project.
+Vivarium simulation model to create synthetic data that looks like the vascular system of the human eye.
+
 
 .. contents::
    :depth: 1
+
+Background
+----------
+
+Vivarium uses a modular approach to agent-based modeling, and this sim combines components
+for general spatial simulation with custom components to grow blood vessels, splitting them
+and avoiding existing vessels as they go.
+
+The simulation works by treating vessel segments as particles in 3D space that move according 
+to physics-based forces. Each particle has position, velocity, and state (active or frozen), 
+with particles freezing to form permanent vessel segments.
+
+Core Components
+~~~~~~~~~~~~~~~
+
+**Particle System (particles.py)**
+
+- **Particle3D()**: The foundational component that manages 3D particle positions, velocities, and states. Handles basic physics updates including velocity changes, terminal velocity limits, and initial particle placement in configurable patterns.
+
+- **PathFreezer()**: Periodically freezes moving particles at their current positions to create permanent vessel segments. Frozen particles become stationary anchor points that influence the movement of other particles.
+
+- **PathSplitter()**: Creates vessel branching by splitting existing paths when certain conditions are met. Generates new particles at split points with modified trajectories, simulating how blood vessels branch into smaller vessels.
+
+- **PathExtinction()**: Removes particles that are no longer viable for vessel growth, typically when forces acting on them exceed a threshold, preventing unrealistic vessel extensions.
+
+- **PathDLA()**: Implements Diffusion Limited Aggregation dynamics where particles stick to frozen structures when they come within a specified radius, creating organic branching patterns similar to real vessel growth.
+
+**Boundary Forces (boundaries.py)**
+
+- **EllipsoidContainment()**: Applies forces to keep particles within an ellipsoidal boundary, simulating the overall shape constraint of the eye or specific eye regions.
+
+- **CylinderExclusion()**: Creates exclusion zones (like the optic nerve) where particles experience repulsive forces, preventing vessel growth in anatomically inappropriate areas.
+
+- **PointRepulsion()**: Applies localized repulsive forces from specific points, useful for creating clearance around critical structures.
+
+- **FrozenRepulsion()**: Prevents particles from colliding with existing frozen vessel segments, ensuring vessels maintain proper spacing and don't overlap.
+
+**Visualization and Analysis**
+
+- **ParticleVisualizer3D()**: Real-time 3D visualization using pygame, displaying particle positions, frozen vessel segments, and boundary constraints with configurable colors and viewing angles.
+
+- **SaveParticles()**: Records particle positions and states throughout the simulation for post-processing analysis and vessel network extraction.
+
+System Integration
+~~~~~~~~~~~~~~~~~~
+
+The components work together through Vivarium's event-driven architecture. Each timestep, 
+particles experience forces from boundary components, move according to physics updates, 
+and may undergo state changes (freezing, splitting, extinction) based on component-specific 
+logic. The result is an emergent vessel network that respects anatomical constraints while 
+exhibiting realistic branching patterns.
+
 
 Installation
 ------------
