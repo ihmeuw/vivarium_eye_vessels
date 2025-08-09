@@ -26,7 +26,7 @@ Core Components
 
 - **Particle3D()**: The foundational component that manages 3D particle positions, velocities, and states. Handles basic physics updates including velocity changes, terminal velocity limits, and initial particle placement in configurable patterns.
 
-- **PathFreezer()**: Periodically freezes moving particles at their current positions to create permanent vessel segments. Frozen particles become stationary anchor points that influence the movement of other particles.
+- **PathFreezer()**: The core vessel-building component that periodically freezes moving particles to create permanent vessel segments. The ``freeze_interval`` parameter controls vessel appearance: values of 2-4 create detailed, continuous vessel networks ideal for retinal capillaries, while values of 8-15 create more scattered growth points suitable for sparse vessel distributions. The component automatically manages particle population by converting available particles into vessel continuations and maintains spatial indexing via KDTree for efficient queries by other components like FrozenRepulsion.
 
 - **PathSplitter()**: Creates vessel branching by splitting existing paths when certain conditions are met. Generates new particles at split points with modified trajectories, simulating how blood vessels branch into smaller vessels.
 
@@ -170,3 +170,22 @@ The ``-v`` flag will log verbosely, so you will get log messages every time
 step. For more ways to run simulations, see the tutorials at
 https://vivarium.readthedocs.io/en/latest/tutorials/running_a_simulation/index.html
 and https://vivarium.readthedocs.io/en/latest/tutorials/exploration.html
+
+Demonstrations
+~~~~~~~~~~~~~~
+
+The repository includes several demonstration configurations and tests:
+
+**Basic particle system**::
+
+   python -m pytest tests/test_basic_visualization.py -v -s
+
+**PathFreezer vessel formation**::
+
+   python -m pytest tests/test_path_freezer_demo.py -v -s
+
+**Available model specifications**:
+
+- ``basic_particles.yaml``: Simple particle movement demo (100 particles, 5 seconds)
+- ``path_freezer_demo.yaml``: Vessel formation with PathFreezer (200+ particles, eye-like parameters)  
+- ``model_spec.yaml``: Full eye vessel simulation with all components

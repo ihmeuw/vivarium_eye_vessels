@@ -1,0 +1,65 @@
+components:
+    vivarium_eye_vessels.components:
+        - particles.Particle3D()
+        - particles.PathFreezer()
+        - boundaries.EllipsoidContainment()
+        - visualizer.ParticleVisualizer3D()
+        - observers.SaveParticles()
+
+configuration:
+    randomness:
+        random_seed: 123456
+    time:
+        start:
+            year: 2025
+            month: 1
+            day: 1
+        end:
+            year: 2025
+            month: 1
+            day: 5  # Longer simulation to see vessel formation
+        step_size: 0.05  # Smaller steps for smoother vessel growth
+    population:
+        population_size: 200  # More particles for better vessel formation
+
+    # Particle configuration optimized for eye vessel appearance
+    particles:
+        overall_max_velocity_change: 0.15
+        initial_velocity_range: [-0.1, 0.1]
+        terminal_velocity: 0.12
+        initial_circle:
+            center: [0.8, 0.0, 0.0]     # Start from one side (simulating optic disc)
+            radius: 0.08                 # Small initial spread
+            n_vessels: 6                # Multiple initial vessels for branching
+
+    # PathFreezer configuration for eye vessel characteristics
+    path_freezer:
+        freeze_interval: 3  # Freeze every 3 steps for continuous vessel segments
+                           # Lower values = more detailed vessels
+                           # Higher values = more scattered growth points
+
+    # Containment optimized for eye-like shape
+    ellipsoid_containment:
+        a: 1.8   # Ellipsoid x semi-major axis (eye width)
+        b: 1.5   # Ellipsoid y semi-major axis (eye height) 
+        c: 0.3   # Ellipsoid z semi-major axis (eye depth - thin)
+        force_type: hookean
+        spring_constant: 2.5  # Strong containment for realistic eye bounds
+
+    # Visualization settings for vessel network
+    visualization:
+        background_color: [0, 0, 0]
+        particle_size: 2
+        rotation_speed: 0.015
+        particle_color: [255, 100, 100]      # Red for active vessels
+        frozen_particle_color: [200, 200, 200]  # Gray for vessel segments
+        projection_scale: 1200.0
+        fps: 60
+        ellipsoid_color: [80, 80, 80]
+        ellipsoid_points: 20
+        screen_height: 900
+        screen_width: 1400
+        
+    # Observer configuration for saving vessel data
+    save_particles:
+        output_file: "vessel_network.csv"
