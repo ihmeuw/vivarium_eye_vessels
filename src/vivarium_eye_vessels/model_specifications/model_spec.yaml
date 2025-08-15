@@ -2,8 +2,8 @@ components:
     vivarium_eye_vessels.components:
         - particles.Particle3D()
         - particles.PathFreezer()
-        # - particles.PathExtinction()
-        # - particles.PathSplitter()
+        - particles.PathExtinction()
+        - particles.PathSplitter()
         # - particles.PathDLA()
         - boundaries.EllipsoidContainment()
         - boundaries.CylinderExclusion()
@@ -47,6 +47,7 @@ configuration:
         split_interval: 30     # Steps between checking for splits
         split_angle: 60         # Angle in degrees between split paths
         split_probability: 0.95  # Probability of eligible path splitting
+        max_depth: 2
 
     path_extinction:
         force_threshold: 0.85

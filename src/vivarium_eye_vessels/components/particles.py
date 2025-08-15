@@ -168,9 +168,7 @@ class Particle3D(Component):
                     0.0,
                 ]
                 pop.loc[i, "path_id"] = i
-                pop.loc[i, ["vz"]] = [
-                    0,
-                ]
+                pop.loc[i, ["depth"]] = 0
 
     def on_time_step(self, event: Event) -> None:
         """Update positions and velocities of non-frozen particles and track blocking forces."""
@@ -379,6 +377,7 @@ class PathSplitter(Component):
             "split_interval": 200,
             "split_angle": 30,
             "split_probability": 0.5,
+            "max_depth": 4,
         }
     }
 
@@ -432,9 +431,13 @@ class PathSplitter(Component):
             active_index = active.index
 
         # Determine which paths will split
-        to_split = self.randomness.filter_for_probability(
+        to_consider = self.randomness.filter_for_probability(
             active_index, self.config.split_probability
         )
+
+        not_too_deep = (pop.loc[to_consider, "depth"] < self.config.max_depth)
+        to_split = to_consider[not_too_deep]
+
         if to_split.empty:
             return
 
@@ -572,14 +575,13 @@ class PathSplitter(Component):
                     "frozen": [True],
                     "freeze_time": [self.clock()],
                     "depth": [original.depth],
-                    "path_id": [self.next_path_id],
+                    "path_id": [original.path_id],
                     "parent_id": [original.parent_id],
                 },
                 index=[orig_idx],
             )
             updates.append(original_update)
 
-            # Create first new branch
             new_branch_1 = pd.DataFrame(
                 {
                     "x": [pos_1[0]],
@@ -598,7 +600,6 @@ class PathSplitter(Component):
             )
             updates.append(new_branch_1)
 
-            # Create second new branch
             new_branch_2 = pd.DataFrame(
                 {
                     "x": [pos_2[0]],
@@ -617,7 +618,7 @@ class PathSplitter(Component):
             )
             updates.append(new_branch_2)
 
-            self.next_path_id += 1
+            self.next_path_id += 2
         return updates
 
     @staticmethod
