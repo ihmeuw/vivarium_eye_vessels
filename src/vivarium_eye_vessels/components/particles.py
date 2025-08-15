@@ -435,7 +435,7 @@ class PathSplitter(Component):
             active_index, self.config.split_probability
         )
 
-        not_too_deep = (pop.loc[to_consider, "depth"] < self.config.max_depth)
+        not_too_deep = pop.loc[to_consider, "depth"] < self.config.max_depth
         to_split = to_consider[not_too_deep]
 
         if to_split.empty:
